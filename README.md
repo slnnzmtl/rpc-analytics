@@ -21,6 +21,10 @@ pytest
 uvicorn rpc_analytics.main:app --host 127.0.0.1 --port 8091
 ```
 
+## Usage
+
+Day-to-day ingest and reporting: [docs/usage.md](docs/usage.md).
+
 ## Deploy
 
 See [docs/architecture.md](docs/architecture.md), [docs/deploy.md](docs/deploy.md),
