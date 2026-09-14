@@ -23,8 +23,8 @@ uvicorn rpc_analytics.main:app --host 127.0.0.1 --port 8091
 
 ## Deploy
 
-See [docs/architecture.md](docs/architecture.md) and (after DDD-133)
-[docs/deploy.md](docs/deploy.md).
+See [docs/architecture.md](docs/architecture.md), [docs/deploy.md](docs/deploy.md),
+and [docs/operations.md](docs/operations.md).
 
 ## License
 

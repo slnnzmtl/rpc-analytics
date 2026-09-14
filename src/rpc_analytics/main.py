@@ -14,6 +14,7 @@ from rpc_analytics import __version__
 from rpc_analytics.config import Settings, get_settings
 from rpc_analytics.ingest import client_ip_from_request, parse_event, read_limited_body
 from rpc_analytics.ratelimit import RateLimiter
+from rpc_analytics.report import report_endpoint
 from rpc_analytics.store import AggregateStore
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -84,3 +85,6 @@ async def ingest_events(request: Request) -> Response:
 
     state.store.upsert_event(event, day=datetime.now(timezone.utc).date())
     return JSONResponse(status.model_dump(), status_code=status_code)
+
+
+app.add_api_route("/v1/report", report_endpoint, methods=["GET"])
