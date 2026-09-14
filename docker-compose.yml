@@ -1,0 +1,28 @@
+services:
+  rpc-analytics:
+    build: .
+    container_name: rpc-analytics
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8091:8091"
+    volumes:
+      - rpc_analytics_data:/data
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+
+volumes:
+  rpc_analytics_data:
+    name: rpc_analytics_data
