@@ -3,8 +3,9 @@
 Privacy-preserving, single-project usage analytics for Rekordbox Playlist Converter.
 
 Public clients send anonymous completed-conversion aggregates to `POST /v1/events`.
-Operators read aggregates via private `GET /v1/report` (Bearer token). Project
-identity is fixed by server configuration and is never accepted from clients.
+Operators read aggregates via `GET /v1/report` (Bearer `REPORT_TOKEN` or an
+allowlisted Supabase JWT) or the `GET /dashboard` UI (Supabase email/password).
+Project identity is fixed by server configuration and is never accepted from clients.
 
 ## Stack
 

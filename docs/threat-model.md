@@ -20,6 +20,8 @@ CRM/agents host off the path entirely.
 - Aggregate UPSERT only; no raw events, bodies, or IP retention on disk.
 - In-memory rate limit keyed by salted IP hash (salt rotates daily).
 - No Docker socket mount; `no-new-privileges`; read-only root filesystem.
-- Public Caddy allowlists `/v1/events` and `/health` only; filter remote IP and
-  forwarded-for from access logs; do not log bodies.
-- Reporting bound for localhost access with Bearer token; not on public `:443`.
+- Public Caddy allowlists `/v1/events`, `/health`, `/dashboard`, and `/v1/report`;
+  report responses require Bearer `REPORT_TOKEN` or a Supabase access token for an
+  email in `DASHBOARD_ALLOWED_EMAILS` (verified via Supabase Auth `/user`, not
+  `user_metadata`). Only the anon/publishable key is used; never `service_role`.
+  Filter remote IP and forwarded-for from access logs; do not log bodies or tokens.

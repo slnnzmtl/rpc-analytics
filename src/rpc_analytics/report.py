@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from datetime import date, datetime, timezone
 
 from fastapi import Header, HTTPException, Query, Request
@@ -23,16 +22,6 @@ ALLOWED_GROUP_BY = ("date",) + ALLOWED_FILTERS
 
 def _utc_today() -> date:
     return datetime.now(timezone.utc).date()
-
-
-def verify_bearer(authorization: str | None, expected: str) -> None:
-    if not expected:
-        raise HTTPException(status_code=503, detail="reporting unavailable")
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="unauthorized")
-    token = authorization.removeprefix("Bearer ").strip()
-    if not secrets.compare_digest(token, expected):
-        raise HTTPException(status_code=403, detail="forbidden")
 
 
 def build_report(
@@ -91,7 +80,7 @@ async def report_endpoint(
     bit_depth: str | None = None,
     sample_rate: str | None = None,
 ) -> JSONResponse:
-    verify_bearer(authorization, request.app.state.rpc.settings.report_token)
+    await request.app.state.rpc.auth.verify_authorization(authorization)
     filters = {
         key: value
         for key, value in {

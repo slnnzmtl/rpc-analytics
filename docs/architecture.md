@@ -14,7 +14,7 @@ reused later as a second Compose project with a different hostname, volume,
 | Project identity | Fixed by server env (`PROJECT_ID`, `PROJECT_NAME`). Never accepted from ingestion payloads. |
 | Data store | One isolated SQLite volume per Compose project. |
 | Ingestion | Public `POST /v1/events` with no client secret. |
-| Reporting | Private `GET /v1/report` with Bearer token; not on the public site allowlist. |
+| Reporting | `GET /v1/report` accepts Bearer `REPORT_TOKEN` or an allowlisted Supabase user JWT; public via Caddy. Dashboard at `/dashboard` uses Supabase email/password. |
 | Multi-tenant | Out of scope. No shared DB, no project registry, no client-supplied project id. |
 
 ## Frontend-only runtime
@@ -32,14 +32,15 @@ Converter clients  --POST /v1/events-->  Caddy (public TLS)
                                               v
                                          SQLite aggregates
 
-Operator  --SSH tunnel-->  GET /v1/report Bearer  -->  same process
+Operator  --HTTPS /dashboard (Supabase login)-->  same process
+Operator  --Bearer REPORT_TOKEN or JWT /v1/report-->  same process
 ```
 
 ## Reuse for another project
 
 1. Clone this Compose project (new directory / Compose project name).
-2. New volume, new `.env` (`PROJECT_ID`, `PROJECT_NAME`, `REPORT_TOKEN`, salts).
-3. New public hostname + Caddy site (ingest + health only).
+2. New volume, new `.env` (`PROJECT_ID`, `PROJECT_NAME`, `REPORT_TOKEN`, Supabase settings, salts).
+3. New public hostname + Caddy site (ingest, health, dashboard, report).
 4. Same image; no shared storage with other deployments.
 
 ## Future dashboard federation

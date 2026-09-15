@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>rpc-analytics dashboard</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'%3E%3Crect width='32' height='32' rx='8' fill='%230f1115'/%3E%3Crect x='6' y='18' width='4' height='8' rx='1' fill='%237aa2ff'/%3E%3Crect x='12' y='12' width='4' height='14' rx='1' fill='%235eb1ef'/%3E%3Crect x='18' y='8' width='4' height='18' rx='1' fill='%233dd68c'/%3E%3Crect x='24' y='14' width='4' height='12' rx='1' fill='%237aa2ff' opacity='0.7'/%3E%3C/svg%3E" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #0f1115;
+      --surface: #181b21;
+      --border: #2a2f3a;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --faint: #6b7280;
+      --accent: #7aa2ff;
+      --success: #3dd68c;
+      --warning: #f5a524;
+      --info: #5eb1ef;
+      --danger: #f07178;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+    h1 { font-size: 1.5rem; font-weight: 650; margin: 0; }
+    h2 { font-size: 1.1rem; font-weight: 600; margin: 0 0 8px; }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 8px; }
+    p { margin: 0; }
+    .muted { color: var(--muted); font-size: 0.875rem; }
+    .faint { color: var(--faint); font-size: 0.75rem; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .stack { display: flex; flex-direction: column; gap: 20px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+    .pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--warning);
+      background: rgba(245, 165, 36, 0.08);
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .callout {
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: rgba(122, 162, 255, 0.06);
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .stats { display: flex; gap: 28px; flex-wrap: wrap; }
+    .stat .value { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.02em; }
+    .stat .label { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+    .stat.success .value { color: var(--success); }
+    .stat.warning .value { color: var(--warning); }
+    label { font-size: 0.8rem; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type="text"], input[type="email"], input[type="date"], input[type="password"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      min-width: 140px;
+    }
+    input[type="email"], input[type="password"] { min-width: 260px; }
+    button {
+      background: var(--accent);
+      color: #0b1020;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error {
+      color: var(--danger);
+      font-size: 0.875rem;
+      border: 1px solid rgba(240, 113, 120, 0.35);
+      background: rgba(240, 113, 120, 0.08);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .chart-wrap { width: 100%; overflow-x: auto; }
+    svg text { font-family: var(--font); fill: var(--muted); font-size: 11px; }
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: 0.8rem; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+    .table-scroll { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+    .hidden { display: none !important; }
+    .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .login-form { display: flex; flex-direction: column; gap: 12px; max-width: 360px; }
+    .login-form .row { align-items: flex-end; }
+    .session-bar { justify-content: space-between; }
+    .donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  </style>
+</head>
+<body>
+  <main class="stack">
+    <div class="stack" style="gap:6px">
+      <div class="row">
+        <h1 id="title">Usage dashboard</h1>
+        <span class="pill">Operator</span>
+      </div>
+      <p class="muted" id="subtitle">
+        Privacy-preserving aggregates from this rpc-analytics instance.
+        Sign in with the allowlisted Supabase account.
+      </p>
+    </div>
+
+    <div id="loginCard" class="card">
+      <form id="loginForm" class="login-form" autocomplete="on">
+        <div>
+          <label for="email">Email</label>
+          <input id="email" type="email" name="email" required autocomplete="username" />
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input id="password" type="password" name="password" required autocomplete="current-password" />
+        </div>
+        <div class="row">
+          <button type="submit" id="signInBtn">Sign in</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="appPanel" class="stack hidden">
+      <div class="row session-bar">
+        <p class="muted" id="sessionLabel"></p>
+        <button type="button" class="secondary" id="signOutBtn">Sign out</button>
+      </div>
+
+      <div class="card">
+        <form id="controls" class="controls" autocomplete="off">
+          <div>
+            <label for="from">From (UTC)</label>
+            <input id="from" type="date" required />
+          </div>
+          <div>
+            <label for="to">To (UTC)</label>
+            <input id="to" type="date" required />
+          </div>
+          <button type="submit" id="loadBtn">Load</button>
+        </form>
+      </div>
+
+      <div id="status" class="callout">Choose a date range, then Load.</div>
+      <div id="error" class="error hidden"></div>
+
+      <div id="results" class="stack hidden">
+        <div class="stats" id="stats"></div>
+
+        <section>
+          <h2>Tracks converted per UTC day</h2>
+          <div class="chart-wrap" id="dailyChart"></div>
+          <div class="legend">
+            <span><i class="swatch" style="background:var(--success)"></i>Converted</span>
+            <span><i class="swatch" style="background:var(--info)"></i>Copied</span>
+            <span><i class="swatch" style="background:var(--warning)"></i>Skipped</span>
+          </div>
+          <p class="faint" id="dailyCaption"></p>
+        </section>
+
+        <div class="grid-2">
+          <section>
+            <h3>Events by surface</h3>
+            <div class="donut-wrap" id="surfaceChart"></div>
+            <p class="faint" id="surfaceCaption"></p>
+          </section>
+          <section>
+            <h3>Tracks converted by output format</h3>
+            <div class="donut-wrap" id="formatChart"></div>
+            <p class="faint" id="formatCaption"></p>
+          </section>
+        </div>
+
+        <section>
+          <h2>App and Rekordbox mix</h2>
+          <div class="chart-wrap" id="mixChart"></div>
+          <p class="faint" id="mixCaption"></p>
+        </section>
+
+        <section>
+          <h2>Ungrouped aggregate rows</h2>
+          <p class="muted" style="margin-bottom:8px">Each row is one dimension combination for the selected range.</p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>App</th>
+                  <th>Rekordbox</th>
+                  <th>Surface</th>
+                  <th>Format</th>
+                  <th class="num">Depth</th>
+                  <th class="num">Rate</th>
+                  <th class="num">Converted</th>
+                  <th class="num">Copied</th>
+                  <th class="num">Skipped</th>
+                  <th class="num">Events</th>
+                </tr>
+              </thead>
+              <tbody id="detailBody"></tbody>
+            </table>
+          </div>
+          <p class="faint" id="detailCaption" style="margin-top:8px"></p>
+        </section>
+      </div>
+    </div>
+
+    <div id="loginError" class="error hidden"></div>
+  </main>
+
+  <script>
+  window.__RPC_DASHBOARD_CONFIG__ = __RPC_ANALYTICS_DASHBOARD_CONFIG__;
+  </script>
+  <script>
+(function () {
+  const SESSION_KEY = "rpc_analytics_supabase_session";
+  const CONFIG = window.__RPC_DASHBOARD_CONFIG__ || {};
+  const COLORS = {
+    converted: "#3dd68c",
+    copied: "#5eb1ef",
+    skipped: "#f5a524",
+    info: "#7aa2ff",
+    neutral: "#9aa0a6",
+    slices: ["#7aa2ff", "#9aa0a6", "#3dd68c", "#5eb1ef", "#f5a524"],
+  };
+
+  let session = null;
+
+  const el = (id) => document.getElementById(id);
+
+  function utcToday() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function daysAgo(n) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function fmt(n) {
+    return Number(n || 0).toLocaleString("en-US");
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function setError(msg) {
+    const box = el("error");
+    if (!box) return;
+    if (!msg) {
+      box.classList.add("hidden");
+      box.textContent = "";
+      return;
+    }
+    box.textContent = msg;
+    box.classList.remove("hidden");
+  }
+
+  function setLoginError(msg) {
+    const box = el("loginError");
+    if (!msg) {
+      box.classList.add("hidden");
+      box.textContent = "";
+      return;
+    }
+    box.textContent = msg;
+    box.classList.remove("hidden");
+  }
+
+  function sourceCaption(from, to) {
+    return "Source: GET /v1/report on rpc-analytics · " + from + " to " + to + " UTC";
+  }
+
+  function authConfigured() {
+    return Boolean(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
+  }
+
+  function authHeaders() {
+    return {
+      apikey: CONFIG.supabaseAnonKey,
+      Authorization: "Bearer " + CONFIG.supabaseAnonKey,
+      "Content-Type": "application/json",
+    };
+  }
+
+  function saveSession(next) {
+    session = next;
+    if (next) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  }
+
+  function loadStoredSession() {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function accessTokenExpired(sess) {
+    if (!sess || !sess.expires_at) return true;
+    // Refresh 30s before expiry.
+    return Date.now() / 1000 >= Number(sess.expires_at) - 30;
+  }
+
+  async function signInWithPassword(email, password) {
+    const base = String(CONFIG.supabaseUrl).replace(/\/$/, "");
+    const res = await fetch(base + "/auth/v1/token?grant_type=password", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ email, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = body.error_description || body.msg || body.error || ("Sign in failed (" + res.status + ")");
+      throw new Error(msg);
+    }
+    return {
+      access_token: body.access_token,
+      refresh_token: body.refresh_token,
+      expires_at: body.expires_at || (Math.floor(Date.now() / 1000) + (body.expires_in || 3600)),
+      user: body.user || { email },
+    };
+  }
+
+  async function refreshSession(sess) {
+    if (!sess || !sess.refresh_token) return null;
+    const base = String(CONFIG.supabaseUrl).replace(/\/$/, "");
+    const res = await fetch(base + "/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ refresh_token: sess.refresh_token }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return null;
+    return {
+      access_token: body.access_token,
+      refresh_token: body.refresh_token || sess.refresh_token,
+      expires_at: body.expires_at || (Math.floor(Date.now() / 1000) + (body.expires_in || 3600)),
+      user: body.user || sess.user,
+    };
+  }
+
+  async function signOutRemote(sess) {
+    if (!sess || !sess.access_token) return;
+    const base = String(CONFIG.supabaseUrl).replace(/\/$/, "");
+    try {
+      await fetch(base + "/auth/v1/logout", {
+        method: "POST",
+        headers: {
+          apikey: CONFIG.supabaseAnonKey,
+          Authorization: "Bearer " + sess.access_token,
+          "Content-Type": "application/json",
+        },
+      });
+    } catch (_err) {
+      // Local clear still happens.
+    }
+  }
+
+  async function ensureAccessToken() {
+    if (!session) return null;
+    if (!accessTokenExpired(session)) return session.access_token;
+    const refreshed = await refreshSession(session);
+    if (!refreshed) {
+      saveSession(null);
+      return null;
+    }
+    saveSession(refreshed);
+    return refreshed.access_token;
+  }
+
+  function showLoggedOut() {
+    el("loginCard").classList.remove("hidden");
+    el("appPanel").classList.add("hidden");
+    el("results").classList.add("hidden");
+    el("sessionLabel").textContent = "";
+  }
+
+  function showLoggedIn() {
+    el("loginCard").classList.add("hidden");
+    el("appPanel").classList.remove("hidden");
+    const email = (session && session.user && session.user.email) || "signed in";
+    el("sessionLabel").textContent = "Signed in as " + email;
+  }
+
+  async function fetchReport(token, from, to, groupBy) {
+    const params = new URLSearchParams({ from, to });
+    if (groupBy) params.set("group_by", groupBy);
+    const res = await fetch("/v1/report?" + params.toString(), {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (res.status === 401 || res.status === 403) {
+      const err = new Error(
+        res.status === 401
+          ? "Unauthorized (401). Sign in again."
+          : "Forbidden (403). This account is not allowlisted."
+      );
+      err.status = res.status;
+      throw err;
+    }
+    if (!res.ok) {
+      const err = new Error("Report failed with HTTP " + res.status);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }
+
+  function sumField(rows, field) {
+    return rows.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
+  }
+
+  function stackedBarChart(rows) {
+    const w = Math.max(640, rows.length * 44);
+    const h = 240;
+    const pad = { t: 16, r: 12, b: 36, l: 44 };
+    const plotW = w - pad.l - pad.r;
+    const plotH = h - pad.t - pad.b;
+    const max = Math.max(1, ...rows.map((r) => r.converted + r.copied + r.skipped));
+    const barW = Math.min(28, (plotW / Math.max(rows.length, 1)) * 0.65);
+    const gap = plotW / Math.max(rows.length, 1);
+
+    let bars = "";
+    rows.forEach((r, i) => {
+      const x = pad.l + gap * i + (gap - barW) / 2;
+      const vals = [
+        { v: r.converted, c: COLORS.converted },
+        { v: r.copied, c: COLORS.copied },
+        { v: r.skipped, c: COLORS.skipped },
+      ];
+      let y = pad.t + plotH;
+      vals.forEach((seg) => {
+        const bh = (seg.v / max) * plotH;
+        y -= bh;
+        if (bh > 0) {
+          bars += `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${seg.c}" rx="1"/>`;
+        }
+      });
+      const label = (r.date || "").slice(5);
+      bars += `<text x="${x + barW / 2}" y="${h - 12}" text-anchor="middle">${esc(label)}</text>`;
+    });
+
+    const ticks = 4;
+    let axes = `<line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + plotH}" stroke="#2a2f3a"/>`;
+    axes += `<line x1="${pad.l}" y1="${pad.t + plotH}" x2="${w - pad.r}" y2="${pad.t + plotH}" stroke="#2a2f3a"/>`;
+    for (let i = 0; i <= ticks; i++) {
+      const val = Math.round((max * (ticks - i)) / ticks);
+      const y = pad.t + (plotH * i) / ticks;
+      axes += `<text x="${pad.l - 6}" y="${y + 3}" text-anchor="end">${fmt(val)}</text>`;
+      axes += `<line x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}" stroke="#2a2f3a" stroke-opacity="0.4"/>`;
+    }
+
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Daily converted, copied, skipped">${axes}${bars}</svg>`;
+  }
+
+  function donutChart(slices, size) {
+    const total = slices.reduce((a, s) => a + s.value, 0) || 1;
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size * 0.36;
+    const stroke = size * 0.14;
+    let acc = 0;
+    const circ = 2 * Math.PI * r;
+    let paths = "";
+    slices.forEach((s, i) => {
+      const len = (s.value / total) * circ;
+      const color = s.color || COLORS.slices[i % COLORS.slices.length];
+      paths += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"
+        stroke-dasharray="${len} ${circ - len}" stroke-dashoffset="${-acc}"
+        transform="rotate(-90 ${cx} ${cy})"/>`;
+      acc += len;
+    });
+    const legend = slices
+      .map((s, i) => {
+        const color = s.color || COLORS.slices[i % COLORS.slices.length];
+        const pct = ((s.value / total) * 100).toFixed(0);
+        return `<span><i class="swatch" style="background:${color}"></i>${esc(s.label)} (${fmt(s.value)}, ${pct}%)</span>`;
+      })
+      .join("");
+    return `
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#2a2f3a" stroke-width="${stroke}"/>
+        ${paths}
+        <text x="${cx}" y="${cy - 2}" text-anchor="middle" fill="#e8eaed" font-size="16" font-weight="650">${fmt(total)}</text>
+        <text x="${cx}" y="${cy + 14}" text-anchor="middle" font-size="10">total</text>
+      </svg>
+      <div class="legend">${legend}</div>`;
+  }
+
+  function horizontalBars(items) {
+    const w = 640;
+    const rowH = 28;
+    const pad = { t: 8, r: 56, b: 8, l: 100 };
+    const h = pad.t + pad.b + items.length * rowH;
+    const plotW = w - pad.l - pad.r;
+    const max = Math.max(1, ...items.map((i) => i.value));
+    let body = "";
+    items.forEach((item, i) => {
+      const y = pad.t + i * rowH;
+      const bw = (item.value / max) * plotW;
+      body += `<text x="${pad.l - 8}" y="${y + 14}" text-anchor="end">${esc(item.label)}</text>`;
+      body += `<rect x="${pad.l}" y="${y + 4}" width="${bw}" height="14" fill="${COLORS.info}" rx="2"/>`;
+      body += `<text x="${pad.l + bw + 6}" y="${y + 15}" fill="#e8eaed">${fmt(item.value)}</text>`;
+    });
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Converted tracks by version">${body}</svg>`;
+  }
+
+  function renderStats(totals) {
+    const skipRate = totals.converted > 0
+      ? ((totals.skipped / totals.converted) * 100).toFixed(1)
+      : "0.0";
+    el("stats").innerHTML = `
+      <div class="stat"><div class="value">${fmt(totals.events)}</div><div class="label">Accepted events</div></div>
+      <div class="stat success"><div class="value">${fmt(totals.converted)}</div><div class="label">Tracks converted</div></div>
+      <div class="stat"><div class="value">${fmt(totals.appended)}</div><div class="label">Tracks appended</div></div>
+      <div class="stat warning"><div class="value">${skipRate}%</div><div class="label">Skip rate (${fmt(totals.skipped)} / ${fmt(totals.converted)})</div></div>
+    `;
+  }
+
+  function renderDetail(rows) {
+    const body = el("detailBody");
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="11" class="muted">No aggregate rows in this range.</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows
+      .map((r) => `
+        <tr>
+          <td>${esc(r.date || "")}</td>
+          <td>${esc(r.app_version || "")}</td>
+          <td>${esc(r.rekordbox_version || "")}</td>
+          <td>${esc(r.surface || "")}</td>
+          <td>${esc(r.output_format || "")}</td>
+          <td class="num">${esc(r.bit_depth || "")}</td>
+          <td class="num">${esc(r.sample_rate || "")}</td>
+          <td class="num">${fmt(r.converted)}</td>
+          <td class="num">${fmt(r.copied)}</td>
+          <td class="num">${fmt(r.skipped)}</td>
+          <td class="num">${fmt(r.event_count)}</td>
+        </tr>`)
+      .join("");
+  }
+
+  async function loadDashboard() {
+    const from = el("from").value;
+    const to = el("to").value;
+    setError("");
+    if (!from || !to || from > to) {
+      setError("Invalid date range.");
+      return;
+    }
+
+    el("loadBtn").disabled = true;
+    el("status").textContent = "Loading reports…";
+    try {
+      const token = await ensureAccessToken();
+      if (!token) {
+        showLoggedOut();
+        setLoginError("Session expired. Sign in again.");
+        return;
+      }
+      const [byDate, bySurface, byApp, byFormat, byRb, detail] = await Promise.all([
+        fetchReport(token, from, to, "date"),
+        fetchReport(token, from, to, "surface"),
+        fetchReport(token, from, to, "app_version"),
+        fetchReport(token, from, to, "output_format"),
+        fetchReport(token, from, to, "rekordbox_version"),
+        fetchReport(token, from, to, null),
+      ]);
+
+      const projectName = byDate.project_name || "Usage dashboard";
+      el("title").textContent = projectName + " — usage";
+
+      const totals = {
+        events: sumField(byDate.rows, "event_count"),
+        converted: sumField(byDate.rows, "converted"),
+        appended: sumField(byDate.rows, "appended"),
+        skipped: sumField(byDate.rows, "skipped"),
+      };
+      renderStats(totals);
+
+      const dailyRows = byDate.rows.map((r) => ({
+        date: r.date,
+        converted: r.converted || 0,
+        copied: r.copied || 0,
+        skipped: r.skipped || 0,
+      }));
+      el("dailyChart").innerHTML = dailyRows.length
+        ? stackedBarChart(dailyRows)
+        : `<p class="muted">No daily data.</p>`;
+      el("dailyCaption").textContent = "Outcome counts (tracks) by UTC day. " + sourceCaption(from, to);
+
+      const surfaceSlices = bySurface.rows.map((r) => ({
+        label: (r.surface || "unknown").toUpperCase(),
+        value: r.event_count || 0,
+        color: r.surface === "gui" ? COLORS.info : COLORS.neutral,
+      }));
+      el("surfaceChart").innerHTML = surfaceSlices.length
+        ? donutChart(surfaceSlices, 200)
+        : `<p class="muted">No surface data.</p>`;
+      el("surfaceCaption").textContent = "Event count, not track count. " + sourceCaption(from, to);
+
+      const formatSlices = byFormat.rows.map((r) => ({
+        label: (r.output_format || "unknown").toUpperCase(),
+        value: r.converted || 0,
+        color: r.output_format === "wav" ? COLORS.converted : COLORS.info,
+      }));
+      el("formatChart").innerHTML = formatSlices.length
+        ? donutChart(formatSlices, 200)
+        : `<p class="muted">No format data.</p>`;
+      el("formatCaption").textContent = "Sum of converted tracks. " + sourceCaption(from, to);
+
+      const mixItems = [
+        ...byApp.rows.map((r) => ({ label: "App " + (r.app_version || "?"), value: r.converted || 0 })),
+        ...byRb.rows.map((r) => ({ label: "RB " + (r.rekordbox_version || "?"), value: r.converted || 0 })),
+      ];
+      el("mixChart").innerHTML = mixItems.length
+        ? horizontalBars(mixItems)
+        : `<p class="muted">No version mix data.</p>`;
+      el("mixCaption").textContent =
+        "Converted-track totals from group_by=app_version and group_by=rekordbox_version. " +
+        sourceCaption(from, to);
+
+      renderDetail(detail.rows || []);
+      el("detailCaption").textContent =
+        "Project identity on the report is server config (" +
+        esc(detail.project_id || "") +
+        "), never taken from the client. " +
+        sourceCaption(from, to);
+
+      el("results").classList.remove("hidden");
+      el("status").textContent =
+        "Loaded " + fmt(totals.events) + " events for " + from + " → " + to +
+        " · project " + (detail.project_id || "");
+    } catch (err) {
+      el("results").classList.add("hidden");
+      setError(err.message || String(err));
+      el("status").textContent = "Load failed.";
+      if (err.status === 401) {
+        saveSession(null);
+        showLoggedOut();
+        setLoginError("Session expired. Sign in again.");
+      }
+    } finally {
+      el("loadBtn").disabled = false;
+    }
+  }
+
+  async function handleSignIn(e) {
+    e.preventDefault();
+    setLoginError("");
+    if (!authConfigured()) {
+      setLoginError("Supabase is not configured on this deployment.");
+      return;
+    }
+    const email = el("email").value.trim();
+    const password = el("password").value;
+    el("signInBtn").disabled = true;
+    try {
+      const next = await signInWithPassword(email, password);
+      saveSession(next);
+      el("password").value = "";
+      showLoggedIn();
+      setError("");
+      el("status").textContent = "Signed in. Choose a date range, then Load.";
+    } catch (err) {
+      setLoginError(err.message || String(err));
+    } finally {
+      el("signInBtn").disabled = false;
+    }
+  }
+
+  async function handleSignOut() {
+    const current = session;
+    await signOutRemote(current);
+    saveSession(null);
+    showLoggedOut();
+    setError("");
+    setLoginError("");
+    el("status").textContent = "Signed out.";
+  }
+
+  async function init() {
+    el("to").value = utcToday();
+    el("from").value = daysAgo(13);
+
+    if (!authConfigured()) {
+      setLoginError("Supabase is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY.");
+      el("signInBtn").disabled = true;
+    }
+
+    el("loginForm").addEventListener("submit", handleSignIn);
+    el("controls").addEventListener("submit", function (e) {
+      e.preventDefault();
+      loadDashboard();
+    });
+    el("signOutBtn").addEventListener("click", handleSignOut);
+
+    const stored = loadStoredSession();
+    if (stored && stored.access_token) {
+      session = stored;
+      if (accessTokenExpired(session)) {
+        const refreshed = await refreshSession(session);
+        if (refreshed) {
+          saveSession(refreshed);
+          showLoggedIn();
+        } else {
+          saveSession(null);
+          showLoggedOut();
+        }
+      } else {
+        showLoggedIn();
+      }
+    } else {
+      showLoggedOut();
+    }
+  }
+
+  init();
+})();
+  </script>
+</body>
+</html>

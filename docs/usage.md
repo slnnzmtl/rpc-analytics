@@ -2,7 +2,8 @@
 
 How to use the live Rekordbox Playlist Converter analytics service.
 
-Public base URL: `https://rpc-analytics.slnnzmtl.xyz`  
+Public base URL: `https://analytics.kazansky.dev`  
+Legacy public URL: `https://rpc-analytics.slnnzmtl.xyz` (same allowlist)  
 App bind (operators only): `127.0.0.1:8091`
 
 Desktop clients **only** call public ingest. They never call `/v1/report` and never
@@ -13,7 +14,7 @@ receive `REPORT_TOKEN`.
 ## Health
 
 ```bash
-curl -sS https://rpc-analytics.slnnzmtl.xyz/health
+curl -sS https://analytics.kazansky.dev/health
 # {"status":"ok"}
 ```
 
@@ -33,7 +34,7 @@ Only send after a **successful** conversion (not dry-run, preview, cancel, or fa
 ### Valid example
 
 ```bash
-curl -sS -X POST https://rpc-analytics.slnnzmtl.xyz/v1/events \
+curl -sS -X POST https://analytics.kazansky.dev/v1/events \
   -H 'content-type: application/json' \
   -d '{
     "schema_version": 1,
@@ -88,9 +89,27 @@ Full contract examples: [contract.md](contract.md).
 
 ## Read reports (operators)
 
-Reporting is **not** on the public site (`https://…/v1/report` returns **404**).
+Reporting and the dashboard are on the public site. `GET /v1/report` requires
+`Authorization: Bearer …` with either:
 
-### On the VPS
+- `REPORT_TOKEN` from `.env` (curl / federation), or
+- a Supabase access token for an email in `DASHBOARD_ALLOWED_EMAILS`
+  (default `slonanezametil@gmail.com`).
+
+### Dashboard
+
+```bash
+open https://analytics.kazansky.dev/dashboard
+```
+
+Sign in with the allowlisted Supabase email and password. The page stores the
+session in `sessionStorage` for that browser tab and calls `GET /v1/report` with
+the access token. Charts cover daily outcomes, surface, format, app /
+Rekordbox mix, and ungrouped rows.
+
+Localhost still works (`http://127.0.0.1:8091/dashboard`) if you prefer an SSH tunnel.
+
+### On the VPS (curl)
 
 ```bash
 cd /root/containers/02-private/analytic-system
@@ -134,8 +153,9 @@ curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
 
 | HTTP | Meaning |
 | --- | --- |
-| 401 | Missing / malformed `Authorization: Bearer …` |
-| 403 | Wrong token |
+| 401 | Missing / malformed Bearer, or invalid Supabase JWT |
+| 403 | Wrong `REPORT_TOKEN`, or valid JWT whose email is not allowlisted |
+| 503 | Neither `REPORT_TOKEN` nor Supabase is configured |
 
 ### Example report body
 
@@ -173,13 +193,15 @@ curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
 
 ```bash
 # Public
-curl -sS https://rpc-analytics.slnnzmtl.xyz/health
-curl -sS -o /dev/null -w '%{http_code}\n' https://rpc-analytics.slnnzmtl.xyz/v1/report   # expect 404
-
-# Private (on VPS or via tunnel)
-curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8091/v1/report               # expect 401
+curl -sS https://analytics.kazansky.dev/health
+curl -sS -o /dev/null -w '%{http_code}\n' https://analytics.kazansky.dev/dashboard   # expect 200
+curl -sS -o /dev/null -w '%{http_code}\n' https://analytics.kazansky.dev/v1/report    # expect 401
 curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
-  "http://127.0.0.1:8091/v1/report?from=$(date -u +%F)&to=$(date -u +%F)"
+  "https://analytics.kazansky.dev/v1/report?from=$(date -u +%F)&to=$(date -u +%F)"
+
+# Private bind still works on the VPS / tunnel
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8091/dashboard          # expect 200
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8091/v1/report               # expect 401
 ```
 
 ---

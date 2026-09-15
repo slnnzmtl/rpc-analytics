@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from rpc_analytics import __version__
+from rpc_analytics.auth import AuthVerifier
 from rpc_analytics.config import Settings, get_settings
 from rpc_analytics.ingest import client_ip_from_request, parse_event, read_limited_body
 from rpc_analytics.ratelimit import RateLimiter
@@ -20,11 +23,16 @@ from rpc_analytics.store import AggregateStore
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("rpc_analytics")
 
+DASHBOARD_HTML = Path(__file__).resolve().parent / "static" / "dashboard.html"
+FAVICON_SVG = Path(__file__).resolve().parent / "static" / "favicon.svg"
+DASHBOARD_CONFIG_PLACEHOLDER = "__RPC_ANALYTICS_DASHBOARD_CONFIG__"
+
 
 class AppState:
     settings: Settings
     store: AggregateStore
     limiter: RateLimiter
+    auth: AuthVerifier
 
 
 @asynccontextmanager
@@ -38,6 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         refill_per_second=settings.rate_limit_refill_per_second,
         salt_seed=settings.rate_limit_salt_seed,
     )
+    state.auth = AuthVerifier(settings)
     app.state.rpc = state
     yield
 
@@ -62,6 +71,32 @@ def health(request: Request) -> Response:
     if not store.check_writable():
         return JSONResponse({"status": "degraded"}, status_code=503)
     return JSONResponse({"status": "ok"})
+
+
+@app.get("/dashboard")
+def dashboard(request: Request) -> HTMLResponse:
+    if not DASHBOARD_HTML.is_file():
+        raise HTTPException(status_code=404, detail="dashboard unavailable")
+    settings = _state(request).settings
+    template = DASHBOARD_HTML.read_text(encoding="utf-8")
+    config = {
+        "supabaseUrl": settings.supabase_url,
+        "supabaseAnonKey": settings.supabase_anon_key,
+    }
+    # JSON in a <script> context: escape </ to avoid breaking out of the tag.
+    config_json = json.dumps(config).replace("<", "\\u003c")
+    if DASHBOARD_CONFIG_PLACEHOLDER not in template:
+        raise HTTPException(status_code=500, detail="dashboard template invalid")
+    html = template.replace(DASHBOARD_CONFIG_PLACEHOLDER, config_json)
+    return HTMLResponse(html, media_type="text/html; charset=utf-8")
+
+
+@app.get("/favicon.svg")
+@app.get("/favicon.ico")
+def favicon() -> FileResponse:
+    if not FAVICON_SVG.is_file():
+        raise HTTPException(status_code=404, detail="favicon unavailable")
+    return FileResponse(FAVICON_SVG, media_type="image/svg+xml")
 
 
 @app.post("/v1/events")
