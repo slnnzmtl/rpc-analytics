@@ -51,6 +51,10 @@ def test_dashboard_returns_login_html(client: TestClient) -> None:
     assert "test-anon-key" in body
     assert "__RPC_ANALYTICS_DASHBOARD_CONFIG__" not in body
     assert "favicon" in body
+    assert "60000" in body
+    assert "Choose a date range, then Load." not in body
+    assert "Sign in to load the last 14 UTC days." in body
+    assert "Users" in body
 
 
 def test_favicon_svg(client: TestClient) -> None:

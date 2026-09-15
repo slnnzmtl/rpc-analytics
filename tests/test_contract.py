@@ -102,6 +102,21 @@ def test_report_response_shape() -> None:
     assert dumped["from"] == "2026-09-01"
     assert dumped["reporting_schema_version"] == 1
     assert dumped["project_id"] == "rekordbox-playlist-converter"
+    assert dumped["unique_installs"] == 0
+
+
+def test_reject_bad_install_id() -> None:
+    payload = valid_example_payload()
+    payload["install_id"] = "not-a-uuid"
+    with pytest.raises(ValidationError):
+        ConversionCompletedEvent.model_validate(payload)
+
+
+def test_optional_install_id_accepted() -> None:
+    payload = valid_example_payload()
+    payload["install_id"] = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    event = ConversionCompletedEvent.model_validate(payload)
+    assert event.install_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 
 def test_contract_doc_exists() -> None:
@@ -110,3 +125,5 @@ def test_contract_doc_exists() -> None:
     assert "conversion_completed" in text
     assert "reporting_schema_version" in text
     assert "project_id" in text
+    assert "install_id" in text
+    assert "unique_installs" in text

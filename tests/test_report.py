@@ -72,6 +72,7 @@ def test_report_authorized_shape(client: TestClient) -> None:
     assert len(body["rows"]) == 1
     assert body["rows"][0]["converted"] == 12
     assert body["rows"][0]["event_count"] == 1
+    assert body["unique_installs"] == 0
 
 
 def test_report_filter_surface(client: TestClient) -> None:

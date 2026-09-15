@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -28,6 +29,11 @@ CREATE TABLE IF NOT EXISTS aggregates (
         output_format, bit_depth, sample_rate
     )
 );
+CREATE TABLE IF NOT EXISTS install_days (
+    day TEXT NOT NULL,
+    install_hash TEXT NOT NULL,
+    PRIMARY KEY (day, install_hash)
+);
 """
 
 UPSERT = """
@@ -47,6 +53,13 @@ ON CONFLICT(
     event_count = event_count + 1;
 """
 
+INSTALL_DAY_INSERT = """
+INSERT OR IGNORE INTO install_days (day, install_hash) VALUES (?, ?);
+"""
+
+
+def _install_hash(install_id: str) -> str:
+    return hashlib.sha256(install_id.encode("utf-8")).hexdigest()[:32]
 
 class AggregateStore:
     def __init__(self, path: str | Path) -> None:
@@ -75,8 +88,6 @@ class AggregateStore:
             return False
 
     def upsert_event(self, event: ConversionCompletedEvent, day: date | None = None) -> None:
-        from datetime import datetime, timezone
-
         bucket = (day or datetime.now(timezone.utc).date()).isoformat()
         with self._connect() as conn:
             conn.execute(
@@ -95,7 +106,24 @@ class AggregateStore:
                     event.outcomes.appended,
                 ),
             )
+            if event.install_id:
+                conn.execute(
+                    INSTALL_DAY_INSERT,
+                    (bucket, _install_hash(event.install_id)),
+                )
             conn.commit()
+
+    def count_unique_installs(self, from_date: str, to_date: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(DISTINCT install_hash) AS n
+                FROM install_days
+                WHERE day >= ? AND day <= ?
+                """,
+                (from_date, to_date),
+            ).fetchone()
+        return int(row["n"] if row else 0)
 
     def query(
         self,

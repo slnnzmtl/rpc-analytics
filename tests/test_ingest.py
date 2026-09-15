@@ -105,4 +105,70 @@ def test_store_has_no_raw_events_table(tmp_path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-    assert tables == {"aggregates"}
+    assert tables == {"aggregates", "install_days"}
+
+
+def test_ingest_without_install_id_unique_zero(client: TestClient) -> None:
+    assert client.post("/v1/events", json=valid_example_payload()).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["unique_installs"] == 0
+
+
+def test_ingest_same_install_id_counts_once(client: TestClient) -> None:
+    payload = valid_example_payload()
+    payload["install_id"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert client.post("/v1/events", json=payload).status_code == 202
+    assert client.post("/v1/events", json=payload).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["unique_installs"] == 1
+
+
+def test_ingest_two_install_ids_count_two(client: TestClient) -> None:
+    a = valid_example_payload()
+    a["install_id"] = "11111111-1111-1111-1111-111111111111"
+    b = valid_example_payload()
+    b["install_id"] = "22222222-2222-2222-2222-222222222222"
+    assert client.post("/v1/events", json=a).status_code == 202
+    assert client.post("/v1/events", json=b).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["unique_installs"] == 2
+
+
+def test_ingest_same_install_across_days_counts_once(client: TestClient) -> None:
+    from datetime import date, timedelta
+
+    from rpc_analytics.contract import ConversionCompletedEvent
+    from rpc_analytics.store import AggregateStore
+
+    store = AggregateStore(get_settings().sqlite_path)
+    event = ConversionCompletedEvent.model_validate(
+        {**valid_example_payload(), "install_id": "33333333-3333-3333-3333-333333333333"}
+    )
+    day_a = date(2026, 9, 1)
+    day_b = day_a + timedelta(days=1)
+    store.upsert_event(event, day=day_a)
+    store.upsert_event(event, day=day_b)
+    assert store.count_unique_installs(day_a.isoformat(), day_b.isoformat()) == 1
+
+
+def test_ingest_bad_install_id_rejected(client: TestClient) -> None:
+    payload = valid_example_payload()
+    payload["install_id"] = "not-a-uuid"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}

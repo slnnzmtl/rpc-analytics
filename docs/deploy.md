@@ -60,7 +60,7 @@ curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
 5. Authorized report (Bearer `REPORT_TOKEN`) → 200 with project metadata
 6. Wrong token → 403
 7. Public `https://analytics.kazansky.dev/dashboard` → 200 HTML with login form
-8. Sign in as allowlisted user → Load reports succeeds
+8. Sign in as allowlisted user → reports load
 
 ## Isolation
 

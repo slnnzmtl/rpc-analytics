@@ -23,6 +23,7 @@
 | `outcomes.copied` | int | 0–10000 |
 | `outcomes.skipped` | int | 0–10000 |
 | `outcomes.appended` | int | 0–10000 |
+| `install_id` | string | optional UUID (`8-4-4-4-12` hex). Omit for legacy clients. Persist one UUID per desktop install. |
 
 ### Valid example
 
@@ -103,6 +104,7 @@ Bearer-authenticated. Includes trusted `project_id` / `project_name` from config
   "project_name": "Rekordbox Playlist Converter",
   "from": "2026-09-01",
   "to": "2026-09-14",
+  "unique_installs": 1,
   "rows": [
     {
       "date": "2026-09-14",

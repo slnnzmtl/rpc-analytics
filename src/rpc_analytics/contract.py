@@ -14,6 +14,9 @@ MAX_BODY_BYTES = 4096
 OUTCOME_MAX = 10_000
 
 VERSION_RE = re.compile(r"^\d{1,4}(\.\d{1,4}){0,3}$")
+INSTALL_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 class Surface(str, Enum):
@@ -59,6 +62,7 @@ class ConversionCompletedEvent(BaseModel):
     bit_depth: BitDepth
     sample_rate: SampleRate
     outcomes: Outcomes
+    install_id: str | None = None
 
     @field_validator("app_version", "rekordbox_version")
     @classmethod
@@ -67,6 +71,16 @@ class ConversionCompletedEvent(BaseModel):
         if not VERSION_RE.fullmatch(cleaned):
             raise ValueError("must be a short dotted version string")
         return cleaned
+
+    @field_validator("install_id")
+    @classmethod
+    def uuid_install_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not INSTALL_ID_RE.fullmatch(cleaned):
+            raise ValueError("must be a UUID string")
+        return cleaned.lower()
 
 
 class StatusResponse(BaseModel):
@@ -104,6 +118,10 @@ class ReportResponse(BaseModel):
     project_name: str
     from_date: str = Field(alias="from")
     to_date: str = Field(alias="to")
+    unique_installs: int = Field(
+        default=0,
+        description="Distinct install_id hashes seen in the from–to UTC range",
+    )
     rows: list[AggregateRow]
 
 

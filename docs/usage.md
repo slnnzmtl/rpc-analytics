@@ -104,8 +104,10 @@ open https://analytics.kazansky.dev/dashboard
 
 Sign in with the allowlisted Supabase email and password. The page stores the
 session in `sessionStorage` for that browser tab and calls `GET /v1/report` with
-the access token. Charts cover daily outcomes, surface, format, app /
-Rekordbox mix, and ungrouped rows.
+the access token. After sign-in (or session restore), the default last-14-UTC-day
+range loads automatically and refreshes every minute. Charts cover daily
+outcomes, surface, format, app / Rekordbox mix, and ungrouped rows. The Users
+stat is `unique_installs` (distinct optional `install_id` values in range).
 
 Localhost still works (`http://127.0.0.1:8091/dashboard`) if you prefer an SSH tunnel.
 

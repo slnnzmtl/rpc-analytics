@@ -30,7 +30,21 @@ docker compose up -d
 curl -sS http://127.0.0.1:8091/health
 ```
 
-Schema is additive aggregates only; no raw-event migrations.
+Schema is additive aggregates only; no raw-event migrations. Optional
+`install_id` adds `install_days` (hash only) via `CREATE TABLE IF NOT EXISTS`.
+
+## Synthetic demo seed
+
+Wipe aggregates and refill 14 UTC days with fake installs (demo volumes only):
+
+```bash
+cd /root/containers/02-private/analytic-system
+docker exec -i rpc-analytics sh -c 'cat > /tmp/seed_synthetic.py' < scripts/seed_synthetic.py
+docker exec -e SQLITE_PATH=/data/analytics.db rpc-analytics \
+  python /tmp/seed_synthetic.py --reset --days 14 --users 36 --seed 42
+```
+
+Then open `/dashboard` and confirm the Users stat matches `unique_installs`.
 
 ## Rollback
 

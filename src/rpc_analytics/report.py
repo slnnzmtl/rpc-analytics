@@ -62,6 +62,7 @@ def build_report(
         project_name=state.settings.project_name,
         from_date=start,
         to_date=end,
+        unique_installs=state.store.count_unique_installs(start, end),
         rows=[AggregateRow.model_validate(row) for row in rows],
     )
     return JSONResponse(report.model_dump(by_alias=True))

@@ -188,7 +188,7 @@
         </form>
       </div>
 
-      <div id="status" class="callout">Choose a date range, then Load.</div>
+      <div id="status" class="callout">Sign in to load the last 14 UTC days.</div>
       <div id="error" class="error hidden"></div>
 
       <div id="results" class="stack hidden">
@@ -261,6 +261,7 @@
   <script>
 (function () {
   const SESSION_KEY = "rpc_analytics_supabase_session";
+  const REFRESH_MS = 60000;
   const CONFIG = window.__RPC_DASHBOARD_CONFIG__ || {};
   const COLORS = {
     converted: "#3dd68c",
@@ -272,6 +273,8 @@
   };
 
   let session = null;
+  let refreshTimer = null;
+  let loading = false;
 
   const el = (id) => document.getElementById(id);
 
@@ -429,6 +432,10 @@
   }
 
   function showLoggedOut() {
+    if (refreshTimer !== null) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
     el("loginCard").classList.remove("hidden");
     el("appPanel").classList.add("hidden");
     el("results").classList.add("hidden");
@@ -440,6 +447,11 @@
     el("appPanel").classList.remove("hidden");
     const email = (session && session.user && session.user.email) || "signed in";
     el("sessionLabel").textContent = "Signed in as " + email;
+    if (refreshTimer !== null) {
+      clearInterval(refreshTimer);
+    }
+    refreshTimer = setInterval(loadDashboard, REFRESH_MS);
+    loadDashboard();
   }
 
   async function fetchReport(token, from, to, groupBy) {
@@ -564,11 +576,12 @@
     return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Converted tracks by version">${body}</svg>`;
   }
 
-  function renderStats(totals) {
+    function renderStats(totals) {
     const skipRate = totals.converted > 0
       ? ((totals.skipped / totals.converted) * 100).toFixed(1)
       : "0.0";
     el("stats").innerHTML = `
+      <div class="stat"><div class="value">${fmt(totals.users)}</div><div class="label">Users</div></div>
       <div class="stat"><div class="value">${fmt(totals.events)}</div><div class="label">Accepted events</div></div>
       <div class="stat success"><div class="value">${fmt(totals.converted)}</div><div class="label">Tracks converted</div></div>
       <div class="stat"><div class="value">${fmt(totals.appended)}</div><div class="label">Tracks appended</div></div>
@@ -601,16 +614,18 @@
   }
 
   async function loadDashboard() {
+    if (loading) return;
     const from = el("from").value;
     const to = el("to").value;
-    setError("");
-    if (!from || !to || from > to) {
-      setError("Invalid date range.");
-      return;
-    }
+    if (!from || !to || from > to) return;
 
-    el("loadBtn").disabled = true;
-    el("status").textContent = "Loading reports…";
+    const quiet = !el("results").classList.contains("hidden");
+    loading = true;
+    if (!quiet) {
+      el("loadBtn").disabled = true;
+      el("status").textContent = "Loading reports…";
+      setError("");
+    }
     try {
       const token = await ensureAccessToken();
       if (!token) {
@@ -627,10 +642,13 @@
         fetchReport(token, from, to, null),
       ]);
 
+      if (!session) return;
+
       const projectName = byDate.project_name || "Usage dashboard";
       el("title").textContent = projectName + " — usage";
 
       const totals = {
+        users: byDate.unique_installs || 0,
         events: sumField(byDate.rows, "event_count"),
         converted: sumField(byDate.rows, "converted"),
         appended: sumField(byDate.rows, "appended"),
@@ -688,19 +706,22 @@
         sourceCaption(from, to);
 
       el("results").classList.remove("hidden");
+      setError("");
+      const updatedAt = new Date().toISOString().slice(11, 19);
       el("status").textContent =
         "Loaded " + fmt(totals.events) + " events for " + from + " → " + to +
-        " · project " + (detail.project_id || "");
+        " · project " + (detail.project_id || "") +
+        " · updated " + updatedAt + " UTC";
     } catch (err) {
-      el("results").classList.add("hidden");
       setError(err.message || String(err));
-      el("status").textContent = "Load failed.";
+      el("status").textContent = quiet ? "Refresh failed." : "Load failed.";
       if (err.status === 401) {
         saveSession(null);
         showLoggedOut();
         setLoginError("Session expired. Sign in again.");
       }
     } finally {
+      loading = false;
       el("loadBtn").disabled = false;
     }
   }
@@ -719,9 +740,8 @@
       const next = await signInWithPassword(email, password);
       saveSession(next);
       el("password").value = "";
-      showLoggedIn();
       setError("");
-      el("status").textContent = "Signed in. Choose a date range, then Load.";
+      showLoggedIn();
     } catch (err) {
       setLoginError(err.message || String(err));
     } finally {
@@ -751,6 +771,12 @@
     el("loginForm").addEventListener("submit", handleSignIn);
     el("controls").addEventListener("submit", function (e) {
       e.preventDefault();
+      const from = el("from").value;
+      const to = el("to").value;
+      if (!from || !to || from > to) {
+        setError("Invalid date range.");
+        return;
+      }
       loadDashboard();
     });
     el("signOutBtn").addEventListener("click", handleSignOut);
@@ -758,15 +784,8 @@
     const stored = loadStoredSession();
     if (stored && stored.access_token) {
       session = stored;
-      if (accessTokenExpired(session)) {
-        const refreshed = await refreshSession(session);
-        if (refreshed) {
-          saveSession(refreshed);
-          showLoggedIn();
-        } else {
-          saveSession(null);
-          showLoggedOut();
-        }
+      if (!(await ensureAccessToken())) {
+        showLoggedOut();
       } else {
         showLoggedIn();
       }
