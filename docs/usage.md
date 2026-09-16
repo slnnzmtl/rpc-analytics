@@ -29,9 +29,29 @@ curl -sS http://127.0.0.1:8091/health
 ## Send an event (public ingest)
 
 `POST /v1/events` — no authentication. Max body **4 KiB**. Unknown fields are rejected.
-Only send after a **successful** conversion (not dry-run, preview, cancel, or failure).
+Do **not** send `project_id`, client timestamps, track/file paths, or raw XML.
 
-### Valid example
+`event` is either:
+
+- `install` — one-shot on first analytics opt-in (required `install_id`; no conversion fields)
+- `conversion_completed` — only after a **successful** conversion (not dry-run, preview, cancel, or failure)
+
+### Valid `install` example
+
+```bash
+curl -sS -X POST https://analytics.kazansky.dev/v1/events \
+  -H 'content-type: application/json' \
+  -d '{
+    "schema_version": 1,
+    "event": "install",
+    "app_version": "1.2.0",
+    "surface": "gui",
+    "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  }'
+# {"status":"accepted"}   HTTP 202
+```
+
+### Valid `conversion_completed` example
 
 ```bash
 curl -sS -X POST https://analytics.kazansky.dev/v1/events \
@@ -60,16 +80,15 @@ curl -sS -X POST https://analytics.kazansky.dev/v1/events \
 | Field | Values |
 | --- | --- |
 | `schema_version` | `1` |
-| `event` | `conversion_completed` |
+| `event` | `install` \| `conversion_completed` |
 | `app_version` | short dotted version (`1.2.0`) |
-| `rekordbox_version` | from XML `PRODUCT@Version` only |
 | `surface` | `gui` \| `cli` |
-| `output_format` | `wav` \| `aiff` |
-| `bit_depth` | `16` \| `24` (selected ceiling) |
-| `sample_rate` | `44100` \| `48000` |
-| `outcomes.*` | integers `0`–`10000` |
-
-Do **not** send `project_id`, client timestamps, track/file paths, or raw XML.
+| `install_id` | UUID (`8-4-4-4-12` hex); required on `install`, optional on `conversion_completed` |
+| `rekordbox_version` | `conversion_completed` only; from XML `PRODUCT@Version` |
+| `output_format` | `conversion_completed` only; `wav` \| `aiff` |
+| `bit_depth` | `conversion_completed` only; `16` \| `24` (selected ceiling) |
+| `sample_rate` | `conversion_completed` only; `44100` \| `48000` |
+| `outcomes.*` | `conversion_completed` only; integers `0`–`10000` |
 
 ### Response codes
 
@@ -107,7 +126,8 @@ session in `sessionStorage` for that browser tab and calls `GET /v1/report` with
 the access token. After sign-in (or session restore), the default last-14-UTC-day
 range loads automatically and refreshes every minute. Charts cover daily
 outcomes, surface, format, app / Rekordbox mix, and ungrouped rows. The Users
-stat is `unique_installs` (distinct optional `install_id` values in range).
+stat is `unique_installs` (distinct hashed `install_id` values from `install` and
+`conversion_completed` events in range).
 
 Localhost still works (`http://127.0.0.1:8091/dashboard`) if you prefer an SSH tunnel.
 

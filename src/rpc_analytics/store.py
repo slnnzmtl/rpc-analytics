@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from rpc_analytics.contract import ConversionCompletedEvent
+from rpc_analytics.contract import ConversionCompletedEvent, IngestEvent
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS aggregates (
@@ -87,25 +87,26 @@ class AggregateStore:
         except sqlite3.Error:
             return False
 
-    def upsert_event(self, event: ConversionCompletedEvent, day: date | None = None) -> None:
+    def upsert_event(self, event: IngestEvent, day: date | None = None) -> None:
         bucket = (day or datetime.now(timezone.utc).date()).isoformat()
         with self._connect() as conn:
-            conn.execute(
-                UPSERT,
-                (
-                    bucket,
-                    event.app_version,
-                    event.rekordbox_version,
-                    event.surface.value,
-                    event.output_format.value,
-                    event.bit_depth.value,
-                    event.sample_rate.value,
-                    event.outcomes.converted,
-                    event.outcomes.copied,
-                    event.outcomes.skipped,
-                    event.outcomes.appended,
-                ),
-            )
+            if isinstance(event, ConversionCompletedEvent):
+                conn.execute(
+                    UPSERT,
+                    (
+                        bucket,
+                        event.app_version,
+                        event.rekordbox_version,
+                        event.surface.value,
+                        event.output_format.value,
+                        event.bit_depth.value,
+                        event.sample_rate.value,
+                        event.outcomes.converted,
+                        event.outcomes.copied,
+                        event.outcomes.skipped,
+                        event.outcomes.appended,
+                    ),
+                )
             if event.install_id:
                 conn.execute(
                     INSTALL_DAY_INSERT,

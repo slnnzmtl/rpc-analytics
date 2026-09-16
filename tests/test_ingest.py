@@ -10,7 +10,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rpc_analytics.config import get_settings
-from rpc_analytics.contract import MAX_BODY_BYTES, valid_example_payload
+from rpc_analytics.contract import (
+    MAX_BODY_BYTES,
+    valid_example_payload,
+    valid_install_payload,
+)
 from rpc_analytics.main import app
 from rpc_analytics.ratelimit import RateLimiter
 from rpc_analytics.store import AggregateStore
@@ -172,3 +176,97 @@ def test_ingest_bad_install_id_rejected(client: TestClient) -> None:
     response = client.post("/v1/events", json=payload)
     assert response.status_code == 400
     assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_install_accepted_counts_unique(client: TestClient) -> None:
+    payload = valid_install_payload()
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted"}
+    assert client.post("/v1/events", json=payload).status_code == 202
+
+    store = AggregateStore(get_settings().sqlite_path)
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert store.query(today, today) == []
+
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unique_installs"] == 1
+    assert body["rows"] == []
+
+
+def test_ingest_install_cli_surface(client: TestClient) -> None:
+    payload = valid_install_payload()
+    payload["surface"] = "cli"
+    payload["install_id"] = "44444444-4444-4444-4444-444444444444"
+    assert client.post("/v1/events", json=payload).status_code == 202
+
+
+def test_ingest_install_rejects_project_id(client: TestClient) -> None:
+    payload = valid_install_payload()
+    payload["project_id"] = "evil"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_install_rejects_conversion_fields(client: TestClient) -> None:
+    payload = valid_install_payload()
+    payload["rekordbox_version"] = "7.0.5"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_install_missing_install_id(client: TestClient) -> None:
+    payload = valid_install_payload()
+    del payload["install_id"]
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_install_bad_install_id(client: TestClient) -> None:
+    payload = valid_install_payload()
+    payload["install_id"] = "not-a-uuid"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_install_bad_version(client: TestClient) -> None:
+    payload = valid_install_payload()
+    payload["app_version"] = "not a version"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_unknown_event_unsupported(client: TestClient) -> None:
+    payload = valid_install_payload()
+    payload["event"] = "session_started"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 422
+    assert response.json() == {"status": "unsupported"}
+
+
+def test_ingest_install_and_conversion_same_id_count_once(client: TestClient) -> None:
+    install = valid_install_payload()
+    conversion = valid_example_payload()
+    conversion["install_id"] = install["install_id"]
+    assert client.post("/v1/events", json=install).status_code == 202
+    assert client.post("/v1/events", json=conversion).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unique_installs"] == 1
+    assert len(body["rows"]) == 1
+    assert body["rows"][0]["event_count"] == 1

@@ -6,8 +6,33 @@
 - Reject unknown fields (`extra=forbid`)
 - No client project id, no client timestamp (bucket by **server UTC date**)
 - No secret in the desktop client
+- `event` is `install` (one-shot on first opt-in) or `conversion_completed`
 
-### v1 payload (completed conversions only)
+### v1 payload — `install`
+
+Slim body. Do **not** send conversion fields (`rekordbox_version`, `output_format`, `bit_depth`, `sample_rate`, `outcomes`). Counts toward `unique_installs` only; does not increment conversion aggregates.
+
+| Field | Type | Allowed |
+| --- | --- | --- |
+| `schema_version` | int | `1` |
+| `event` | string | `install` |
+| `app_version` | string | short dotted version (`1.2.0`) |
+| `surface` | string | `gui` \| `cli` |
+| `install_id` | string | required UUID (`8-4-4-4-12` hex). Persist one UUID per desktop install. |
+
+### Valid `install` example
+
+```json
+{
+  "schema_version": 1,
+  "event": "install",
+  "app_version": "1.2.0",
+  "surface": "gui",
+  "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+}
+```
+
+### v1 payload — `conversion_completed`
 
 | Field | Type | Allowed |
 | --- | --- | --- |
@@ -25,7 +50,7 @@
 | `outcomes.appended` | int | 0–10000 |
 | `install_id` | string | optional UUID (`8-4-4-4-12` hex). Omit for legacy clients. Persist one UUID per desktop install. |
 
-### Valid example
+### Valid `conversion_completed` example
 
 ```json
 {
@@ -47,6 +72,19 @@
 ```
 
 ### Invalid examples
+
+`install` with conversion fields (reject):
+
+```json
+{
+  "schema_version": 1,
+  "event": "install",
+  "app_version": "1.2.0",
+  "surface": "gui",
+  "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "outcomes": {"converted": 1, "copied": 0, "skipped": 0, "appended": 1}
+}
+```
 
 Unknown field / client project id (reject):
 
