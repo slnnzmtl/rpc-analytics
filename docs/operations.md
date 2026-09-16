@@ -30,8 +30,10 @@ docker compose up -d
 curl -sS http://127.0.0.1:8091/health
 ```
 
-Schema is additive aggregates only; no raw-event migrations. Optional
-`install_id` adds `install_days` (hash only) via `CREATE TABLE IF NOT EXISTS`.
+Schema is additive aggregates only; no raw-event migrations. `install` and
+optional conversion `install_id` add `install_days` (hash only) via
+`CREATE TABLE IF NOT EXISTS`. `install` events do not write conversion
+aggregates.
 
 ## Synthetic demo seed
 

@@ -48,6 +48,20 @@ class Outcomes(BaseModel):
     appended: int = Field(ge=0, le=OUTCOME_MAX)
 
 
+def _short_dotted_version(value: str) -> str:
+    cleaned = value.strip()
+    if not VERSION_RE.fullmatch(cleaned):
+        raise ValueError("must be a short dotted version string")
+    return cleaned
+
+
+def _uuid_install_id(value: str) -> str:
+    cleaned = value.strip()
+    if not INSTALL_ID_RE.fullmatch(cleaned):
+        raise ValueError("must be a UUID string")
+    return cleaned.lower()
+
+
 class ConversionCompletedEvent(BaseModel):
     """v1 completed-conversion ingest payload. Rejects unknown fields."""
 
@@ -67,20 +81,39 @@ class ConversionCompletedEvent(BaseModel):
     @field_validator("app_version", "rekordbox_version")
     @classmethod
     def short_dotted_version(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not VERSION_RE.fullmatch(cleaned):
-            raise ValueError("must be a short dotted version string")
-        return cleaned
+        return _short_dotted_version(value)
 
     @field_validator("install_id")
     @classmethod
     def uuid_install_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        cleaned = value.strip()
-        if not INSTALL_ID_RE.fullmatch(cleaned):
-            raise ValueError("must be a UUID string")
-        return cleaned.lower()
+        return _uuid_install_id(value)
+
+
+class InstallEvent(BaseModel):
+    """v1 one-shot install ingest payload. Rejects unknown fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    event: Literal["install"]
+    app_version: str
+    surface: Surface
+    install_id: str
+
+    @field_validator("app_version")
+    @classmethod
+    def short_dotted_version(cls, value: str) -> str:
+        return _short_dotted_version(value)
+
+    @field_validator("install_id")
+    @classmethod
+    def uuid_install_id(cls, value: str) -> str:
+        return _uuid_install_id(value)
+
+
+IngestEvent = ConversionCompletedEvent | InstallEvent
 
 
 class StatusResponse(BaseModel):
@@ -141,4 +174,14 @@ def valid_example_payload() -> dict:
             "skipped": 1,
             "appended": 15,
         },
+    }
+
+
+def valid_install_payload() -> dict:
+    return {
+        "schema_version": 1,
+        "event": "install",
+        "app_version": "1.2.0",
+        "surface": "gui",
+        "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     }

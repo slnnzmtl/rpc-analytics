@@ -13,8 +13,10 @@ from rpc_analytics.contract import (
     MAX_BODY_BYTES,
     REPORTING_SCHEMA_VERSION,
     ConversionCompletedEvent,
+    InstallEvent,
     ReportResponse,
     valid_example_payload,
+    valid_install_payload,
 )
 
 
@@ -119,10 +121,53 @@ def test_optional_install_id_accepted() -> None:
     assert event.install_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 
+def test_valid_install_parses() -> None:
+    event = InstallEvent.model_validate(valid_install_payload())
+    assert event.schema_version == INGEST_SCHEMA_VERSION
+    assert event.event == "install"
+    assert event.install_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
+def test_install_rejects_conversion_fields() -> None:
+    payload = valid_install_payload()
+    payload["outcomes"] = {"converted": 1, "copied": 0, "skipped": 0, "appended": 1}
+    with pytest.raises(ValidationError):
+        InstallEvent.model_validate(payload)
+
+
+def test_install_rejects_project_id() -> None:
+    payload = valid_install_payload()
+    payload["project_id"] = "should-not-be-accepted"
+    with pytest.raises(ValidationError):
+        InstallEvent.model_validate(payload)
+
+
+def test_install_requires_install_id() -> None:
+    payload = valid_install_payload()
+    del payload["install_id"]
+    with pytest.raises(ValidationError):
+        InstallEvent.model_validate(payload)
+
+
+def test_install_rejects_bad_install_id() -> None:
+    payload = valid_install_payload()
+    payload["install_id"] = "not-a-uuid"
+    with pytest.raises(ValidationError):
+        InstallEvent.model_validate(payload)
+
+
+def test_install_normalizes_install_id() -> None:
+    payload = valid_install_payload()
+    payload["install_id"] = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    event = InstallEvent.model_validate(payload)
+    assert event.install_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
 def test_contract_doc_exists() -> None:
     root = Path(__file__).resolve().parents[1]
     text = (root / "docs" / "contract.md").read_text(encoding="utf-8")
     assert "conversion_completed" in text
+    assert '"event": "install"' in text
     assert "reporting_schema_version" in text
     assert "project_id" in text
     assert "install_id" in text

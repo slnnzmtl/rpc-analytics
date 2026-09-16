@@ -12,8 +12,15 @@ from pydantic import ValidationError
 from rpc_analytics.contract import (
     MAX_BODY_BYTES,
     ConversionCompletedEvent,
+    IngestEvent,
+    InstallEvent,
     StatusResponse,
 )
+
+EVENT_MODELS: dict[str, type[ConversionCompletedEvent] | type[InstallEvent]] = {
+    "conversion_completed": ConversionCompletedEvent,
+    "install": InstallEvent,
+}
 
 logger = logging.getLogger("rpc_analytics")
 
@@ -40,7 +47,7 @@ async def read_limited_body(request: Request) -> tuple[bytes | None, StatusRespo
     return b"".join(chunks), None, None
 
 
-def parse_event(body: bytes) -> tuple[ConversionCompletedEvent | None, StatusResponse, int]:
+def parse_event(body: bytes) -> tuple[IngestEvent | None, StatusResponse, int]:
     try:
         data: Any = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -51,16 +58,18 @@ def parse_event(body: bytes) -> tuple[ConversionCompletedEvent | None, StatusRes
 
     schema_version = data.get("schema_version")
     event_name = data.get("event")
-    if schema_version != 1 or event_name != "conversion_completed":
+    model = EVENT_MODELS.get(event_name) if isinstance(event_name, str) else None
+    if schema_version != 1 or model is None:
         return None, StatusResponse(status="unsupported"), 422
 
     try:
-        event = ConversionCompletedEvent.model_validate(data)
+        event = model.model_validate(data)
     except ValidationError:
         return None, StatusResponse(status="invalid"), 400
 
     logger.info(
-        "ingest status=accepted route=/v1/events schema_version=%s",
+        "ingest status=accepted route=/v1/events schema_version=%s event=%s",
         event.schema_version,
+        event.event,
     )
     return event, StatusResponse(status="accepted"), 202
