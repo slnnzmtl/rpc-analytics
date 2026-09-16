@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- DNS A record: `analytics.kazansky.dev` → frontend public IP (`91.99.109.18`)
-- Optional legacy: `rpc-analytics.slnnzmtl.xyz` → same IP (still allowlisted in Caddy)
+- DNS A record: `analytics.slnnzmtl.xyz` → frontend public IP (`91.99.109.18`)
+- Optional legacy: `analytics.kazansky.dev`, `rpc-analytics.slnnzmtl.xyz` → same IP (still allowlisted in Caddy)
 - Docker + Compose
 - Caddy reverse proxy project at `/root/containers/01-reverse-proxy`
 - Existing Supabase project with user `slonanezametil@gmail.com` (email/password)
@@ -22,8 +22,8 @@ cp .env.example .env
 In the Supabase dashboard for that project:
 
 1. Disable public signups if they are still enabled.
-2. Auth → URL configuration: add `https://analytics.kazansky.dev` and
-   `https://analytics.kazansky.dev/dashboard` (plus `http://127.0.0.1:8091` for
+2. Auth → URL configuration: add `https://analytics.slnnzmtl.xyz` and
+   `https://analytics.slnnzmtl.xyz/dashboard` (plus `http://127.0.0.1:8091` for
    tunnel use if needed).
 
 ## Start
@@ -40,7 +40,7 @@ Report data requires Bearer `REPORT_TOKEN` or an allowlisted Supabase JWT.
 Dashboard UI (Supabase email/password login):
 
 ```bash
-open https://analytics.kazansky.dev/dashboard
+open https://analytics.slnnzmtl.xyz/dashboard
 ```
 
 Optional SSH local-forward for localhost-only access:
@@ -56,10 +56,10 @@ curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
 1. `GET /health` → 200
 2. Invalid ingest → 400
 3. Valid ingest → 202
-4. Public `https://analytics.kazansky.dev/v1/report` without Bearer → 401
+4. Public `https://analytics.slnnzmtl.xyz/v1/report` without Bearer → 401
 5. Authorized report (Bearer `REPORT_TOKEN`) → 200 with project metadata
 6. Wrong token → 403
-7. Public `https://analytics.kazansky.dev/dashboard` → 200 HTML with login form
+7. Public `https://analytics.slnnzmtl.xyz/dashboard` → 200 HTML with login form
 8. Sign in as allowlisted user → reports load
 
 ## Isolation

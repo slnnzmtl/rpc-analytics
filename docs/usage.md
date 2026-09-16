@@ -2,8 +2,8 @@
 
 How to use the live Rekordbox Playlist Converter analytics service.
 
-Public base URL: `https://analytics.kazansky.dev`  
-Legacy public URL: `https://rpc-analytics.slnnzmtl.xyz` (same allowlist)  
+Public base URL: `https://analytics.slnnzmtl.xyz`  
+Legacy public URLs: `https://analytics.kazansky.dev`, `https://rpc-analytics.slnnzmtl.xyz` (same allowlist)  
 App bind (operators only): `127.0.0.1:8091`
 
 Desktop clients **only** call public ingest. They never call `/v1/report` and never
@@ -14,7 +14,7 @@ receive `REPORT_TOKEN`.
 ## Health
 
 ```bash
-curl -sS https://analytics.kazansky.dev/health
+curl -sS https://analytics.slnnzmtl.xyz/health
 # {"status":"ok"}
 ```
 
@@ -39,7 +39,7 @@ Do **not** send `project_id`, client timestamps, track/file paths, or raw XML.
 ### Valid `install` example
 
 ```bash
-curl -sS -X POST https://analytics.kazansky.dev/v1/events \
+curl -sS -X POST https://analytics.slnnzmtl.xyz/v1/events \
   -H 'content-type: application/json' \
   -d '{
     "schema_version": 1,
@@ -54,7 +54,7 @@ curl -sS -X POST https://analytics.kazansky.dev/v1/events \
 ### Valid `conversion_completed` example
 
 ```bash
-curl -sS -X POST https://analytics.kazansky.dev/v1/events \
+curl -sS -X POST https://analytics.slnnzmtl.xyz/v1/events \
   -H 'content-type: application/json' \
   -d '{
     "schema_version": 1,
@@ -70,6 +70,15 @@ curl -sS -X POST https://analytics.kazansky.dev/v1/events \
       "copied": 3,
       "skipped": 1,
       "appended": 15
+    },
+    "input_file_types": {
+      "mp3": 4,
+      "wav": 2,
+      "aiff": 1,
+      "flac": 3,
+      "m4a": 1,
+      "alac": 0,
+      "other": 1
     }
   }'
 # {"status":"accepted"}   HTTP 202
@@ -89,6 +98,7 @@ curl -sS -X POST https://analytics.kazansky.dev/v1/events \
 | `bit_depth` | `conversion_completed` only; `16` \| `24` (selected ceiling) |
 | `sample_rate` | `conversion_completed` only; `44100` \| `48000` |
 | `outcomes.*` | `conversion_completed` only; integers `0`–`10000` |
+| `input_file_types.*` | `conversion_completed` only; optional object; counts per source extension bucket (`mp3`, `wav`, `aiff`, `flac`, `m4a`, `alac`, `other`), each `0`–`10000` |
 
 ### Response codes
 
@@ -118,7 +128,7 @@ Reporting and the dashboard are on the public site. `GET /v1/report` requires
 ### Dashboard
 
 ```bash
-open https://analytics.kazansky.dev/dashboard
+open https://analytics.slnnzmtl.xyz/dashboard
 ```
 
 Sign in with the allowlisted Supabase email and password. The page stores the
@@ -215,11 +225,11 @@ curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
 
 ```bash
 # Public
-curl -sS https://analytics.kazansky.dev/health
-curl -sS -o /dev/null -w '%{http_code}\n' https://analytics.kazansky.dev/dashboard   # expect 200
-curl -sS -o /dev/null -w '%{http_code}\n' https://analytics.kazansky.dev/v1/report    # expect 401
+curl -sS https://analytics.slnnzmtl.xyz/health
+curl -sS -o /dev/null -w '%{http_code}\n' https://analytics.slnnzmtl.xyz/dashboard   # expect 200
+curl -sS -o /dev/null -w '%{http_code}\n' https://analytics.slnnzmtl.xyz/v1/report    # expect 401
 curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
-  "https://analytics.kazansky.dev/v1/report?from=$(date -u +%F)&to=$(date -u +%F)"
+  "https://analytics.slnnzmtl.xyz/v1/report?from=$(date -u +%F)&to=$(date -u +%F)"
 
 # Private bind still works on the VPS / tunnel
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8091/dashboard          # expect 200

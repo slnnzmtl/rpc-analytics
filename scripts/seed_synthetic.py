@@ -49,6 +49,15 @@ def _event(install_id: str, rng: random.Random) -> ConversionCompletedEvent:
                 "skipped": skipped,
                 "appended": converted + copied,
             },
+            "input_file_types": {
+                "mp3": rng.randint(0, converted),
+                "wav": rng.randint(0, max(1, converted // 4)),
+                "aiff": rng.randint(0, max(1, converted // 6)),
+                "flac": rng.randint(0, max(1, converted // 5)),
+                "m4a": rng.randint(0, max(1, converted // 8)),
+                "alac": rng.randint(0, max(1, converted // 10)),
+                "other": rng.randint(0, 2),
+            },
             "install_id": install_id,
         }
     )

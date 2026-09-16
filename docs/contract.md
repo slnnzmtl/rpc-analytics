@@ -48,6 +48,14 @@ Slim body. Do **not** send conversion fields (`rekordbox_version`, `output_forma
 | `outcomes.copied` | int | 0–10000 |
 | `outcomes.skipped` | int | 0–10000 |
 | `outcomes.appended` | int | 0–10000 |
+| `input_file_types` | object | optional; per-batch counts of **source** files by extension bucket |
+| `input_file_types.mp3` | int | 0–10000 |
+| `input_file_types.wav` | int | 0–10000 |
+| `input_file_types.aiff` | int | 0–10000 |
+| `input_file_types.flac` | int | 0–10000 |
+| `input_file_types.m4a` | int | 0–10000 |
+| `input_file_types.alac` | int | 0–10000 |
+| `input_file_types.other` | int | 0–10000; AAC/unknown extensions not listed above |
 | `install_id` | string | optional UUID (`8-4-4-4-12` hex). Omit for legacy clients. Persist one UUID per desktop install. |
 
 ### Valid `conversion_completed` example
@@ -67,6 +75,15 @@ Slim body. Do **not** send conversion fields (`rekordbox_version`, `output_forma
     "copied": 3,
     "skipped": 1,
     "appended": 15
+  },
+  "input_file_types": {
+    "mp3": 4,
+    "wav": 2,
+    "aiff": 1,
+    "flac": 3,
+    "m4a": 1,
+    "alac": 0,
+    "other": 1
   }
 }
 ```
@@ -156,6 +173,13 @@ Bearer-authenticated. Includes trusted `project_id` / `project_name` from config
       "copied": 3,
       "skipped": 1,
       "appended": 15,
+      "input_mp3": 4,
+      "input_wav": 2,
+      "input_aiff": 1,
+      "input_flac": 3,
+      "input_m4a": 1,
+      "input_alac": 0,
+      "input_other": 1,
       "event_count": 1
     }
   ]

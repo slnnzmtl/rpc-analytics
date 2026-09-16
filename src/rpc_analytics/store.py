@@ -8,7 +8,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from rpc_analytics.contract import ConversionCompletedEvent, IngestEvent
+from rpc_analytics.contract import (
+    INPUT_FILE_TYPE_KEYS,
+    ConversionCompletedEvent,
+    IngestEvent,
+)
+
+INPUT_FILE_TYPE_COLUMNS = tuple(f"input_{key}" for key in INPUT_FILE_TYPE_KEYS)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS aggregates (
@@ -23,6 +29,13 @@ CREATE TABLE IF NOT EXISTS aggregates (
     copied INTEGER NOT NULL DEFAULT 0,
     skipped INTEGER NOT NULL DEFAULT 0,
     appended INTEGER NOT NULL DEFAULT 0,
+    input_mp3 INTEGER NOT NULL DEFAULT 0,
+    input_wav INTEGER NOT NULL DEFAULT 0,
+    input_aiff INTEGER NOT NULL DEFAULT 0,
+    input_flac INTEGER NOT NULL DEFAULT 0,
+    input_m4a INTEGER NOT NULL DEFAULT 0,
+    input_alac INTEGER NOT NULL DEFAULT 0,
+    input_other INTEGER NOT NULL DEFAULT 0,
     event_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (
         day, app_version, rekordbox_version, surface,
@@ -36,12 +49,20 @@ CREATE TABLE IF NOT EXISTS install_days (
 );
 """
 
-UPSERT = """
+_INPUT_COLS_SQL = ", ".join(INPUT_FILE_TYPE_COLUMNS)
+_INPUT_PLACEHOLDERS = ", ".join("?" for _ in INPUT_FILE_TYPE_COLUMNS)
+_INPUT_UPSERT_ADD = ",\n    ".join(
+    f"{col} = {col} + excluded.{col}" for col in INPUT_FILE_TYPE_COLUMNS
+)
+
+UPSERT = f"""
 INSERT INTO aggregates (
     day, app_version, rekordbox_version, surface,
     output_format, bit_depth, sample_rate,
-    converted, copied, skipped, appended, event_count
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    converted, copied, skipped, appended,
+    {_INPUT_COLS_SQL},
+    event_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {_INPUT_PLACEHOLDERS}, 1)
 ON CONFLICT(
     day, app_version, rekordbox_version, surface,
     output_format, bit_depth, sample_rate
@@ -50,6 +71,7 @@ ON CONFLICT(
     copied = copied + excluded.copied,
     skipped = skipped + excluded.skipped,
     appended = appended + excluded.appended,
+    {_INPUT_UPSERT_ADD},
     event_count = event_count + 1;
 """
 
@@ -60,6 +82,22 @@ INSERT OR IGNORE INTO install_days (day, install_hash) VALUES (?, ?);
 
 def _install_hash(install_id: str) -> str:
     return hashlib.sha256(install_id.encode("utf-8")).hexdigest()[:32]
+
+
+def _input_file_type_counts(event: ConversionCompletedEvent) -> tuple[int, ...]:
+    if event.input_file_types is None:
+        return tuple(0 for _ in INPUT_FILE_TYPE_KEYS)
+    counts = event.input_file_types
+    return tuple(getattr(counts, key) for key in INPUT_FILE_TYPE_KEYS)
+
+
+def _migrate_aggregates(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(aggregates)")}
+    for column in INPUT_FILE_TYPE_COLUMNS:
+        if column not in existing:
+            conn.execute(
+                f"ALTER TABLE aggregates ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+            )
 
 class AggregateStore:
     def __init__(self, path: str | Path) -> None:
@@ -77,6 +115,8 @@ class AggregateStore:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            _migrate_aggregates(conn)
+            conn.commit()
 
     def check_writable(self) -> bool:
         try:
@@ -105,6 +145,7 @@ class AggregateStore:
                         event.outcomes.copied,
                         event.outcomes.skipped,
                         event.outcomes.appended,
+                        *_input_file_type_counts(event),
                     ),
                 )
             if event.install_id:
@@ -186,12 +227,14 @@ class AggregateStore:
                     select_list.append(f"{col} AS {name}" if name != "date" else "day AS date")
                 else:
                     select_list.append(f"NULL AS {name}" if name != "date" else "MIN(day) AS date")
+            input_sums = ", ".join(f"SUM({col}) AS {col}" for col in INPUT_FILE_TYPE_COLUMNS)
             sql = f"""
                 SELECT {', '.join(select_list)},
                        SUM(converted) AS converted,
                        SUM(copied) AS copied,
                        SUM(skipped) AS skipped,
                        SUM(appended) AS appended,
+                       {input_sums},
                        SUM(event_count) AS event_count
                 FROM aggregates
                 WHERE {' AND '.join(where)}
@@ -199,10 +242,13 @@ class AggregateStore:
                 ORDER BY 1
             """
         else:
+            input_cols = ", ".join(INPUT_FILE_TYPE_COLUMNS)
             sql = f"""
                 SELECT day AS date, app_version, rekordbox_version, surface,
                        output_format, bit_depth, sample_rate,
-                       converted, copied, skipped, appended, event_count
+                       converted, copied, skipped, appended,
+                       {input_cols},
+                       event_count
                 FROM aggregates
                 WHERE {' AND '.join(where)}
                 ORDER BY day, app_version, rekordbox_version, surface,
@@ -225,5 +271,8 @@ class AggregateStore:
             ):
                 if item.get(key) is None:
                     item[key] = ""
+            for col in INPUT_FILE_TYPE_COLUMNS:
+                if item.get(col) is None:
+                    item[col] = 0
             result.append(item)
         return result

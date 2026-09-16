@@ -13,6 +13,8 @@ REPORTING_SCHEMA_VERSION = 1
 MAX_BODY_BYTES = 4096
 OUTCOME_MAX = 10_000
 
+INPUT_FILE_TYPE_KEYS = ("mp3", "wav", "aiff", "flac", "m4a", "alac", "other")
+
 VERSION_RE = re.compile(r"^\d{1,4}(\.\d{1,4}){0,3}$")
 INSTALL_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -48,6 +50,20 @@ class Outcomes(BaseModel):
     appended: int = Field(ge=0, le=OUTCOME_MAX)
 
 
+class InputFileTypes(BaseModel):
+    """Per-batch counts of source files by extension bucket (lowercase)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mp3: int = Field(ge=0, le=OUTCOME_MAX)
+    wav: int = Field(ge=0, le=OUTCOME_MAX)
+    aiff: int = Field(ge=0, le=OUTCOME_MAX)
+    flac: int = Field(ge=0, le=OUTCOME_MAX)
+    m4a: int = Field(ge=0, le=OUTCOME_MAX)
+    alac: int = Field(ge=0, le=OUTCOME_MAX)
+    other: int = Field(ge=0, le=OUTCOME_MAX)
+
+
 def _short_dotted_version(value: str) -> str:
     cleaned = value.strip()
     if not VERSION_RE.fullmatch(cleaned):
@@ -76,6 +92,7 @@ class ConversionCompletedEvent(BaseModel):
     bit_depth: BitDepth
     sample_rate: SampleRate
     outcomes: Outcomes
+    input_file_types: InputFileTypes | None = None
     install_id: str | None = None
 
     @field_validator("app_version", "rekordbox_version")
@@ -136,6 +153,13 @@ class AggregateRow(BaseModel):
     copied: int
     skipped: int
     appended: int
+    input_mp3: int = 0
+    input_wav: int = 0
+    input_aiff: int = 0
+    input_flac: int = 0
+    input_m4a: int = 0
+    input_alac: int = 0
+    input_other: int = 0
     event_count: int = Field(
         description="Number of accepted ingest requests that contributed to this row"
     )
@@ -173,6 +197,15 @@ def valid_example_payload() -> dict:
             "copied": 3,
             "skipped": 1,
             "appended": 15,
+        },
+        "input_file_types": {
+            "mp3": 4,
+            "wav": 2,
+            "aiff": 1,
+            "flac": 3,
+            "m4a": 1,
+            "alac": 0,
+            "other": 1,
         },
     }
 

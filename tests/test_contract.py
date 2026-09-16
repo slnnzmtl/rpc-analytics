@@ -41,6 +41,20 @@ def test_reject_unknown_nested_outcome_field() -> None:
         ConversionCompletedEvent.model_validate(payload)
 
 
+def test_reject_unknown_input_file_type_field() -> None:
+    payload = valid_example_payload()
+    payload["input_file_types"]["wma"] = 1
+    with pytest.raises(ValidationError):
+        ConversionCompletedEvent.model_validate(payload)
+
+
+def test_input_file_types_optional_for_legacy_clients() -> None:
+    payload = valid_example_payload()
+    del payload["input_file_types"]
+    event = ConversionCompletedEvent.model_validate(payload)
+    assert event.input_file_types is None
+
+
 def test_unsupported_schema_version() -> None:
     payload = valid_example_payload()
     payload["schema_version"] = 2

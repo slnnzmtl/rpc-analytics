@@ -33,7 +33,8 @@ curl -sS http://127.0.0.1:8091/health
 Schema is additive aggregates only; no raw-event migrations. `install` and
 optional conversion `install_id` add `install_days` (hash only) via
 `CREATE TABLE IF NOT EXISTS`. `install` events do not write conversion
-aggregates.
+aggregates. New conversion dimensions (e.g. `input_*` file-type counts) are
+added with `ALTER TABLE` on startup when missing.
 
 ## Synthetic demo seed
 

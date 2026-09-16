@@ -57,6 +57,26 @@ def test_ingest_accepted_and_aggregated(client: TestClient, tmp_path: Path) -> N
     assert rows[0]["event_count"] == 2
 
 
+def test_ingest_aggregates_input_file_types(client: TestClient) -> None:
+    payload = valid_example_payload()
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 202
+
+    store = AggregateStore(get_settings().sqlite_path)
+    today = datetime.now(timezone.utc).date().isoformat()
+    row = store.query(today, today)[0]
+    assert row["input_mp3"] == 4
+    assert row["input_flac"] == 3
+    assert row["input_alac"] == 0
+
+    legacy = valid_example_payload()
+    del legacy["input_file_types"]
+    assert client.post("/v1/events", json=legacy).status_code == 202
+    row2 = store.query(today, today)[0]
+    assert row2["input_mp3"] == 4
+    assert row2["event_count"] == 2
+
+
 def test_ingest_rejects_project_id(client: TestClient) -> None:
     payload = valid_example_payload()
     payload["project_id"] = "evil"
