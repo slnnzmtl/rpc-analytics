@@ -76,6 +76,7 @@
     .stat .label { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
     .stat.success .value { color: var(--success); }
     .stat.warning .value { color: var(--warning); }
+    .stat.danger .value { color: var(--danger); }
     label { font-size: 0.8rem; color: var(--muted); display: block; margin-bottom: 4px; }
     input[type="text"], input[type="email"], input[type="date"], input[type="password"] {
       background: var(--bg);
@@ -205,6 +206,23 @@
           <p class="faint" id="dailyCaption"></p>
         </section>
 
+        <section>
+          <h2>Install events per UTC day</h2>
+          <div class="chart-wrap" id="installChart"></div>
+          <div class="legend">
+            <span><i class="swatch" style="background:var(--info)"></i>GUI</span>
+            <span><i class="swatch" style="background:var(--muted)"></i>CLI</span>
+          </div>
+          <p class="faint" id="installCaption"></p>
+        </section>
+
+        <section>
+          <h2>Failed conversions per UTC day</h2>
+          <div class="chart-wrap" id="failureChart"></div>
+          <div class="legend" id="failureLegend"></div>
+          <p class="faint" id="failureCaption"></p>
+        </section>
+
         <div class="grid-2">
           <section>
             <h3>Events by surface</h3>
@@ -217,6 +235,19 @@
             <p class="faint" id="formatCaption"></p>
           </section>
         </div>
+
+        <section>
+          <h2>Source files by input type</h2>
+          <div class="chart-wrap" id="inputTypeChart"></div>
+          <p class="faint" id="inputTypeCaption"></p>
+        </section>
+
+        <section>
+          <h2>Source input files per UTC day</h2>
+          <div class="chart-wrap" id="inputDailyChart"></div>
+          <div class="legend" id="inputDailyLegend"></div>
+          <p class="faint" id="inputDailyCaption"></p>
+        </section>
 
         <section>
           <h2>App and Rekordbox mix</h2>
@@ -242,6 +273,13 @@
                   <th class="num">Copied</th>
                   <th class="num">Skipped</th>
                   <th class="num">Events</th>
+                  <th class="num">MP3</th>
+                  <th class="num">WAV</th>
+                  <th class="num">AIFF</th>
+                  <th class="num">FLAC</th>
+                  <th class="num">M4A</th>
+                  <th class="num">ALAC</th>
+                  <th class="num">Other</th>
                 </tr>
               </thead>
               <tbody id="detailBody"></tbody>
@@ -269,8 +307,37 @@
     skipped: "#f5a524",
     info: "#7aa2ff",
     neutral: "#9aa0a6",
-    slices: ["#7aa2ff", "#9aa0a6", "#3dd68c", "#5eb1ef", "#f5a524"],
+    slices: ["#7aa2ff", "#9aa0a6", "#3dd68c", "#5eb1ef", "#f5a524", "#c792ea", "#f07178"],
   };
+  const INPUT_FILE_BUCKETS = [
+    { field: "input_mp3", label: "MP3" },
+    { field: "input_wav", label: "WAV" },
+    { field: "input_aiff", label: "AIFF" },
+    { field: "input_flac", label: "FLAC" },
+    { field: "input_m4a", label: "M4A" },
+    { field: "input_alac", label: "ALAC" },
+    { field: "input_other", label: "Other" },
+  ];
+  const FAILURE_REASONS = [
+    { key: "xml_parse", label: "xml_parse", color: COLORS.slices[0] },
+    { key: "encode", label: "encode", color: COLORS.slices[4] },
+    { key: "config", label: "config", color: COLORS.slices[5] },
+    { key: "unknown", label: "unknown", color: COLORS.slices[6] },
+  ];
+  const INSTALL_SERIES = [
+    { key: "gui", label: "GUI", color: COLORS.info },
+    { key: "cli", label: "CLI", color: COLORS.neutral },
+  ];
+  const DAILY_OUTCOME_SERIES = [
+    { key: "converted", label: "Converted", color: COLORS.converted },
+    { key: "copied", label: "Copied", color: COLORS.copied },
+    { key: "skipped", label: "Skipped", color: COLORS.skipped },
+  ];
+  const INPUT_DAILY_SERIES = INPUT_FILE_BUCKETS.map((bucket, i) => ({
+    key: bucket.field,
+    label: bucket.label,
+    color: COLORS.slices[i % COLORS.slices.length],
+  }));
 
   let session = null;
   let refreshTimer = null;
@@ -481,30 +548,55 @@
     return rows.reduce((acc, r) => acc + (Number(r[field]) || 0), 0);
   }
 
-  function stackedBarChart(rows) {
+  function sumInputBuckets(rows) {
+    return INPUT_FILE_BUCKETS.map((bucket, i) => ({
+      label: bucket.label,
+      value: sumField(rows, bucket.field),
+      color: COLORS.slices[i % COLORS.slices.length],
+    }));
+  }
+
+  function inputTypesByDate(rows) {
+    const byDate = new Map();
+    (rows || []).forEach((r) => {
+      const date = r.date || "";
+      if (!byDate.has(date)) {
+        byDate.set(date, { date });
+        INPUT_FILE_BUCKETS.forEach((bucket) => {
+          byDate.get(date)[bucket.field] = 0;
+        });
+      }
+      const bucket = byDate.get(date);
+      INPUT_FILE_BUCKETS.forEach((b) => {
+        bucket[b.field] += Number(r[b.field]) || 0;
+      });
+    });
+    return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  function seriesStackedBarChart(rows, series, ariaLabel, height = 220) {
     const w = Math.max(640, rows.length * 44);
-    const h = 240;
+    const h = height;
     const pad = { t: 16, r: 12, b: 36, l: 44 };
     const plotW = w - pad.l - pad.r;
     const plotH = h - pad.t - pad.b;
-    const max = Math.max(1, ...rows.map((r) => r.converted + r.copied + r.skipped));
+    const max = Math.max(
+      1,
+      ...rows.map((r) => series.reduce((acc, s) => acc + (Number(r[s.key]) || 0), 0))
+    );
     const barW = Math.min(28, (plotW / Math.max(rows.length, 1)) * 0.65);
     const gap = plotW / Math.max(rows.length, 1);
 
     let bars = "";
     rows.forEach((r, i) => {
       const x = pad.l + gap * i + (gap - barW) / 2;
-      const vals = [
-        { v: r.converted, c: COLORS.converted },
-        { v: r.copied, c: COLORS.copied },
-        { v: r.skipped, c: COLORS.skipped },
-      ];
       let y = pad.t + plotH;
-      vals.forEach((seg) => {
-        const bh = (seg.v / max) * plotH;
+      series.forEach((seg) => {
+        const v = Number(r[seg.key]) || 0;
+        const bh = (v / max) * plotH;
         y -= bh;
         if (bh > 0) {
-          bars += `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${seg.c}" rx="1"/>`;
+          bars += `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" fill="${seg.color}" rx="1"/>`;
         }
       });
       const label = (r.date || "").slice(5);
@@ -521,7 +613,52 @@
       axes += `<line x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}" stroke="#2a2f3a" stroke-opacity="0.4"/>`;
     }
 
-    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Daily converted, copied, skipped">${axes}${bars}</svg>`;
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${esc(ariaLabel)}">${axes}${bars}</svg>`;
+  }
+
+  function aggregateByDateSeries(rows, seriesKeys, keyField) {
+    const byDate = new Map();
+    (rows || []).forEach((r) => {
+      const date = r.date || "";
+      if (!byDate.has(date)) {
+        const counts = {};
+        seriesKeys.forEach((key) => {
+          counts[key] = 0;
+        });
+        byDate.set(date, { date, counts });
+      }
+      const bucket = byDate.get(date);
+      const count = Number(r.event_count) || 0;
+      const key = r[keyField];
+      if (Object.prototype.hasOwnProperty.call(bucket.counts, key)) {
+        bucket.counts[key] += count;
+      } else if (Object.prototype.hasOwnProperty.call(bucket.counts, "unknown")) {
+        bucket.counts.unknown += count;
+      }
+    });
+    return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  function seriesChartRows(buckets, series) {
+    return buckets.map((bucket) => {
+      const row = { date: bucket.date };
+      series.forEach((seg) => {
+        row[seg.key] = bucket.counts[seg.key] || 0;
+      });
+      return row;
+    });
+  }
+
+  function aggregateInstallsByDate(installRows) {
+    return aggregateByDateSeries(installRows, ["gui", "cli"], "surface");
+  }
+
+  function aggregateFailuresByDate(failureRows) {
+    return aggregateByDateSeries(
+      failureRows,
+      FAILURE_REASONS.map((r) => r.key),
+      "reason"
+    );
   }
 
   function donutChart(slices, size) {
@@ -569,8 +706,9 @@
     items.forEach((item, i) => {
       const y = pad.t + i * rowH;
       const bw = (item.value / max) * plotW;
+      const color = item.color || COLORS.info;
       body += `<text x="${pad.l - 8}" y="${y + 14}" text-anchor="end">${esc(item.label)}</text>`;
-      body += `<rect x="${pad.l}" y="${y + 4}" width="${bw}" height="14" fill="${COLORS.info}" rx="2"/>`;
+      body += `<rect x="${pad.l}" y="${y + 4}" width="${bw}" height="14" fill="${color}" rx="2"/>`;
       body += `<text x="${pad.l + bw + 6}" y="${y + 15}" fill="#e8eaed">${fmt(item.value)}</text>`;
     });
     return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="Converted tracks by version">${body}</svg>`;
@@ -582,7 +720,9 @@
       : "0.0";
     el("stats").innerHTML = `
       <div class="stat"><div class="value">${fmt(totals.users)}</div><div class="label">Users</div></div>
-      <div class="stat"><div class="value">${fmt(totals.events)}</div><div class="label">Accepted events</div></div>
+      <div class="stat"><div class="value">${fmt(totals.installs || 0)}</div><div class="label">Install events</div></div>
+      <div class="stat"><div class="value">${fmt(totals.events)}</div><div class="label">Conversion events</div></div>
+      <div class="stat danger"><div class="value">${fmt(totals.failures || 0)}</div><div class="label">Failed conversions</div></div>
       <div class="stat success"><div class="value">${fmt(totals.converted)}</div><div class="label">Tracks converted</div></div>
       <div class="stat"><div class="value">${fmt(totals.appended)}</div><div class="label">Tracks appended</div></div>
       <div class="stat warning"><div class="value">${skipRate}%</div><div class="label">Skip rate (${fmt(totals.skipped)} / ${fmt(totals.converted)})</div></div>
@@ -592,7 +732,7 @@
   function renderDetail(rows) {
     const body = el("detailBody");
     if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="11" class="muted">No aggregate rows in this range.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="18" class="muted">No aggregate rows in this range.</td></tr>`;
       return;
     }
     body.innerHTML = rows
@@ -609,6 +749,13 @@
           <td class="num">${fmt(r.copied)}</td>
           <td class="num">${fmt(r.skipped)}</td>
           <td class="num">${fmt(r.event_count)}</td>
+          <td class="num">${fmt(r.input_mp3)}</td>
+          <td class="num">${fmt(r.input_wav)}</td>
+          <td class="num">${fmt(r.input_aiff)}</td>
+          <td class="num">${fmt(r.input_flac)}</td>
+          <td class="num">${fmt(r.input_m4a)}</td>
+          <td class="num">${fmt(r.input_alac)}</td>
+          <td class="num">${fmt(r.input_other)}</td>
         </tr>`)
       .join("");
   }
@@ -650,6 +797,8 @@
       const totals = {
         users: byDate.unique_installs || 0,
         events: sumField(byDate.rows, "event_count"),
+        installs: sumField(byDate.install_rows || [], "event_count"),
+        failures: sumField(byDate.failure_rows || [], "event_count"),
         converted: sumField(byDate.rows, "converted"),
         appended: sumField(byDate.rows, "appended"),
         skipped: sumField(byDate.rows, "skipped"),
@@ -663,9 +812,49 @@
         skipped: r.skipped || 0,
       }));
       el("dailyChart").innerHTML = dailyRows.length
-        ? stackedBarChart(dailyRows)
+        ? seriesStackedBarChart(
+            dailyRows,
+            DAILY_OUTCOME_SERIES,
+            "Daily converted, copied, skipped",
+            240
+          )
         : `<p class="muted">No daily data.</p>`;
       el("dailyCaption").textContent = "Outcome counts (tracks) by UTC day. " + sourceCaption(from, to);
+
+      const installDaily = seriesChartRows(
+        aggregateInstallsByDate(byDate.install_rows || []),
+        INSTALL_SERIES
+      );
+      el("installChart").innerHTML = installDaily.length
+        ? seriesStackedBarChart(
+            installDaily,
+            INSTALL_SERIES,
+            "Install events by UTC day and surface"
+          )
+        : `<p class="muted">No install events in this range.</p>`;
+      el("installCaption").textContent =
+        "Accepted event=install counts by UTC day and surface (not unique users). " +
+        sourceCaption(from, to);
+
+      const failureDaily = seriesChartRows(
+        aggregateFailuresByDate(byDate.failure_rows || []),
+        FAILURE_REASONS
+      );
+      el("failureChart").innerHTML = failureDaily.length
+        ? seriesStackedBarChart(
+            failureDaily,
+            FAILURE_REASONS,
+            "Failed conversions by UTC day and reason"
+          )
+        : `<p class="muted">No failed conversions in this range.</p>`;
+      el("failureLegend").innerHTML = failureDaily.length
+        ? FAILURE_REASONS.map(
+            (r) => `<span><i class="swatch" style="background:${r.color}"></i>${esc(r.label)}</span>`
+          ).join("")
+        : "";
+      el("failureCaption").textContent =
+        "Accepted event=conversion_failed counts by UTC day and reason. " +
+        sourceCaption(from, to);
 
       const surfaceSlices = bySurface.rows.map((r) => ({
         label: (r.surface || "unknown").toUpperCase(),
@@ -686,6 +875,34 @@
         ? donutChart(formatSlices, 200)
         : `<p class="muted">No format data.</p>`;
       el("formatCaption").textContent = "Sum of converted tracks. " + sourceCaption(from, to);
+
+      const inputTotals = sumInputBuckets(byDate.rows || []);
+      const inputNonZero = inputTotals.filter((item) => item.value > 0);
+      el("inputTypeChart").innerHTML = inputNonZero.length
+        ? horizontalBars(inputNonZero)
+        : `<p class="muted">No input file type data in this range.</p>`;
+      el("inputTypeCaption").textContent =
+        "Source file counts from client input_file_types, summed over the range. Legacy events without the field contribute 0. " +
+        sourceCaption(from, to);
+
+      const inputDaily = inputTypesByDate(byDate.rows || []);
+      const inputDailyTotal = inputTotals.reduce((acc, item) => acc + item.value, 0);
+      el("inputDailyChart").innerHTML = inputDailyTotal > 0 && inputDaily.length
+        ? seriesStackedBarChart(
+            inputDaily,
+            INPUT_DAILY_SERIES,
+            "Source input files by UTC day",
+            240
+          )
+        : `<p class="muted">No input file type data in this range.</p>`;
+      el("inputDailyLegend").innerHTML = inputDailyTotal > 0
+        ? INPUT_FILE_BUCKETS.map((bucket, i) => {
+            const color = COLORS.slices[i % COLORS.slices.length];
+            return `<span><i class="swatch" style="background:${color}"></i>${esc(bucket.label)}</span>`;
+          }).join("")
+        : "";
+      el("inputDailyCaption").textContent =
+        "Source file counts by UTC day and extension bucket. " + sourceCaption(from, to);
 
       const mixItems = [
         ...byApp.rows.map((r) => ({ label: "App " + (r.app_version || "?"), value: r.converted || 0 })),
@@ -709,7 +926,9 @@
       setError("");
       const updatedAt = new Date().toISOString().slice(11, 19);
       el("status").textContent =
-        "Loaded " + fmt(totals.events) + " events for " + from + " → " + to +
+        "Loaded " + fmt(totals.events) + " conversion / " +
+        fmt(totals.installs) + " install / " +
+        fmt(totals.failures) + " failed events for " + from + " → " + to +
         " · project " + (detail.project_id || "") +
         " · updated " + updatedAt + " UTC";
     } catch (err) {

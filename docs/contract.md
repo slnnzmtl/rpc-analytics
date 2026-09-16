@@ -6,7 +6,7 @@
 - Reject unknown fields (`extra=forbid`)
 - No client project id, no client timestamp (bucket by **server UTC date**)
 - No secret in the desktop client
-- `event` is `install` (one-shot on first opt-in) or `conversion_completed`
+- `event` is `install` (one-shot on first opt-in), `conversion_completed`, or `conversion_failed`
 
 ### v1 payload — `install`
 
@@ -29,6 +29,36 @@ Slim body. Do **not** send conversion fields (`rekordbox_version`, `output_forma
   "app_version": "1.2.0",
   "surface": "gui",
   "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+}
+```
+
+### v1 payload — `conversion_failed`
+
+Slim body like `install`, plus a closed failure `reason`. Do **not** send conversion
+fields (`rekordbox_version`, `output_format`, `bit_depth`, `sample_rate`, `outcomes`,
+`input_file_types`) or free-text messages / paths. Counts toward `unique_installs`;
+does not increment conversion aggregates. Send only after a **failed conversion job**
+(not dry-run, preview, or cancel).
+
+| Field | Type | Allowed |
+| --- | --- | --- |
+| `schema_version` | int | `1` |
+| `event` | string | `conversion_failed` |
+| `app_version` | string | short dotted version (`1.2.0`) |
+| `surface` | string | `gui` \| `cli` |
+| `install_id` | string | required UUID (`8-4-4-4-12` hex). Persist one UUID per desktop install. |
+| `reason` | string | `xml_parse` \| `encode` \| `config` \| `unknown` |
+
+### Valid `conversion_failed` example
+
+```json
+{
+  "schema_version": 1,
+  "event": "conversion_failed",
+  "app_version": "1.2.0",
+  "surface": "gui",
+  "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "reason": "xml_parse"
 }
 ```
 
@@ -182,8 +212,31 @@ Bearer-authenticated. Includes trusted `project_id` / `project_name` from config
       "input_other": 1,
       "event_count": 1
     }
+  ],
+  "install_rows": [
+    {
+      "date": "2026-09-14",
+      "app_version": "1.2.0",
+      "surface": "gui",
+      "event_count": 1
+    }
+  ],
+  "failure_rows": [
+    {
+      "date": "2026-09-14",
+      "app_version": "1.2.0",
+      "surface": "gui",
+      "reason": "xml_parse",
+      "event_count": 1
+    }
   ]
 }
 ```
+
+`rows` are `conversion_completed` aggregates. `install_rows` are `event=install`
+aggregates (by UTC day, app version, and surface). `failure_rows` are
+`event=conversion_failed` aggregates (by UTC day, app version, surface, and
+reason). `unique_installs` is distinct hashed `install_id` values from all event
+types in range.
 
 Query params (implemented in DDD-133): `from`, `to`, optional `group_by` and dimension filters.

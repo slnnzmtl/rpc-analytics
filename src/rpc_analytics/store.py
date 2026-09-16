@@ -11,7 +11,9 @@ from typing import Any
 from rpc_analytics.contract import (
     INPUT_FILE_TYPE_KEYS,
     ConversionCompletedEvent,
+    ConversionFailedEvent,
     IngestEvent,
+    InstallEvent,
 )
 
 INPUT_FILE_TYPE_COLUMNS = tuple(f"input_{key}" for key in INPUT_FILE_TYPE_KEYS)
@@ -47,6 +49,21 @@ CREATE TABLE IF NOT EXISTS install_days (
     install_hash TEXT NOT NULL,
     PRIMARY KEY (day, install_hash)
 );
+CREATE TABLE IF NOT EXISTS install_aggregates (
+    day TEXT NOT NULL,
+    app_version TEXT NOT NULL,
+    surface TEXT NOT NULL,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, app_version, surface)
+);
+CREATE TABLE IF NOT EXISTS failure_aggregates (
+    day TEXT NOT NULL,
+    app_version TEXT NOT NULL,
+    surface TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, app_version, surface, reason)
+);
 """
 
 _INPUT_COLS_SQL = ", ".join(INPUT_FILE_TYPE_COLUMNS)
@@ -79,6 +96,20 @@ INSTALL_DAY_INSERT = """
 INSERT OR IGNORE INTO install_days (day, install_hash) VALUES (?, ?);
 """
 
+INSTALL_UPSERT = """
+INSERT INTO install_aggregates (day, app_version, surface, event_count)
+VALUES (?, ?, ?, 1)
+ON CONFLICT(day, app_version, surface) DO UPDATE SET
+    event_count = event_count + 1;
+"""
+
+FAILURE_UPSERT = """
+INSERT INTO failure_aggregates (day, app_version, surface, reason, event_count)
+VALUES (?, ?, ?, ?, 1)
+ON CONFLICT(day, app_version, surface, reason) DO UPDATE SET
+    event_count = event_count + 1;
+"""
+
 
 def _install_hash(install_id: str) -> str:
     return hashlib.sha256(install_id.encode("utf-8")).hexdigest()[:32]
@@ -98,6 +129,7 @@ def _migrate_aggregates(conn: sqlite3.Connection) -> None:
             conn.execute(
                 f"ALTER TABLE aggregates ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
             )
+
 
 class AggregateStore:
     def __init__(self, path: str | Path) -> None:
@@ -148,6 +180,21 @@ class AggregateStore:
                         *_input_file_type_counts(event),
                     ),
                 )
+            elif isinstance(event, InstallEvent):
+                conn.execute(
+                    INSTALL_UPSERT,
+                    (bucket, event.app_version, event.surface.value),
+                )
+            elif isinstance(event, ConversionFailedEvent):
+                conn.execute(
+                    FAILURE_UPSERT,
+                    (
+                        bucket,
+                        event.app_version,
+                        event.surface.value,
+                        event.reason.value,
+                    ),
+                )
             if event.install_id:
                 conn.execute(
                     INSTALL_DAY_INSERT,
@@ -166,6 +213,94 @@ class AggregateStore:
                 (from_date, to_date),
             ).fetchone()
         return int(row["n"] if row else 0)
+
+    def query_installs(
+        self,
+        from_date: str,
+        to_date: str,
+        *,
+        filters: dict[str, str] | None = None,
+        group_by: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        filters = filters or {}
+        allowed_dims = {
+            "date": "day",
+            "app_version": "app_version",
+            "surface": "surface",
+        }
+        where = ["day >= ?", "day <= ?"]
+        params: list[Any] = [from_date, to_date]
+        for key, column in allowed_dims.items():
+            if key == "date":
+                continue
+            if key in filters:
+                where.append(f"{column} = ?")
+                params.append(filters[key])
+
+        if group_by:
+            group_cols = []
+            for name in group_by:
+                if name not in allowed_dims:
+                    raise ValueError(f"unsupported install group_by: {name}")
+                group_cols.append(allowed_dims[name])
+            select_list = []
+            for name in ("date", "app_version", "surface"):
+                if name in group_by:
+                    col = allowed_dims[name]
+                    select_list.append(f"{col} AS {name}" if name != "date" else "day AS date")
+                else:
+                    select_list.append(f"NULL AS {name}" if name != "date" else "MIN(day) AS date")
+            sql = f"""
+                SELECT {', '.join(select_list)},
+                       SUM(event_count) AS event_count
+                FROM install_aggregates
+                WHERE {' AND '.join(where)}
+                GROUP BY {', '.join(group_cols)}
+                ORDER BY 1
+            """
+        else:
+            sql = f"""
+                SELECT day AS date, app_version, surface, event_count
+                FROM install_aggregates
+                WHERE {' AND '.join(where)}
+                ORDER BY day, app_version, surface
+            """
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            for key in ("date", "app_version", "surface"):
+                if item.get(key) is None:
+                    item[key] = ""
+            result.append(item)
+        return result
+
+    def query_failures(
+        self,
+        from_date: str,
+        to_date: str,
+        *,
+        filters: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        filters = filters or {}
+        where = ["day >= ?", "day <= ?"]
+        params: list[Any] = [from_date, to_date]
+        for key, column in (("app_version", "app_version"), ("surface", "surface")):
+            if key in filters:
+                where.append(f"{column} = ?")
+                params.append(filters[key])
+
+        sql = f"""
+            SELECT day AS date, app_version, surface, reason, event_count
+            FROM failure_aggregates
+            WHERE {' AND '.join(where)}
+            ORDER BY day, app_version, surface, reason
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
 
     def query(
         self,

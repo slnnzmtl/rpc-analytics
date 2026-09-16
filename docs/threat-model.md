@@ -18,9 +18,9 @@ CRM/agents host off the path entirely.
 
 - Reject unknown ingestion fields; 4 KiB body limit.
 - Aggregate UPSERT only; no raw events, bodies, or IP retention on disk.
-  `install_id` (required on `install`, optional on `conversion_completed`) is
-  stored only as a truncated SHA-256 hash per UTC day (`install_days`); the raw
-  UUID is never written or logged.
+  `install_id` (required on `install` and `conversion_failed`, optional on
+  `conversion_completed`) is stored only as a truncated SHA-256 hash per UTC day
+  (`install_days`); the raw UUID is never written or logged.
 - In-memory rate limit keyed by salted IP hash (salt rotates daily).
 - No Docker socket mount; `no-new-privileges`; read-only root filesystem.
 - Public Caddy allowlists `/v1/events`, `/health`, `/dashboard`, and `/v1/report`;

@@ -41,6 +41,13 @@ class SampleRate(str, Enum):
     rate_48000 = "48000"
 
 
+class FailureReason(str, Enum):
+    xml_parse = "xml_parse"
+    encode = "encode"
+    config = "config"
+    unknown = "unknown"
+
+
 class Outcomes(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -130,7 +137,30 @@ class InstallEvent(BaseModel):
         return _uuid_install_id(value)
 
 
-IngestEvent = ConversionCompletedEvent | InstallEvent
+class ConversionFailedEvent(BaseModel):
+    """v1 failed-conversion ingest payload. Install fields plus closed reason."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    event: Literal["conversion_failed"]
+    app_version: str
+    surface: Surface
+    install_id: str
+    reason: FailureReason
+
+    @field_validator("app_version")
+    @classmethod
+    def short_dotted_version(cls, value: str) -> str:
+        return _short_dotted_version(value)
+
+    @field_validator("install_id")
+    @classmethod
+    def uuid_install_id(cls, value: str) -> str:
+        return _uuid_install_id(value)
+
+
+IngestEvent = ConversionCompletedEvent | InstallEvent | ConversionFailedEvent
 
 
 class StatusResponse(BaseModel):
@@ -165,6 +195,33 @@ class AggregateRow(BaseModel):
     )
 
 
+class InstallAggregateRow(BaseModel):
+    """Aggregated install events (event=install only)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    app_version: str
+    surface: str
+    event_count: int = Field(
+        description="Number of accepted install ingest requests for this row"
+    )
+
+
+class FailureAggregateRow(BaseModel):
+    """Aggregated conversion_failed events."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    date: str
+    app_version: str
+    surface: str
+    reason: str
+    event_count: int = Field(
+        description="Number of accepted conversion_failed ingest requests for this row"
+    )
+
+
 class ReportResponse(BaseModel):
     """Machine-readable aggregate report for future federated dashboards."""
 
@@ -180,6 +237,14 @@ class ReportResponse(BaseModel):
         description="Distinct install_id hashes seen in the from–to UTC range",
     )
     rows: list[AggregateRow]
+    install_rows: list[InstallAggregateRow] = Field(
+        default_factory=list,
+        description="Aggregated install events (not conversion_completed)",
+    )
+    failure_rows: list[FailureAggregateRow] = Field(
+        default_factory=list,
+        description="Aggregated conversion_failed events",
+    )
 
 
 def valid_example_payload() -> dict:
@@ -217,4 +282,15 @@ def valid_install_payload() -> dict:
         "app_version": "1.2.0",
         "surface": "gui",
         "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    }
+
+
+def valid_failure_payload() -> dict:
+    return {
+        "schema_version": 1,
+        "event": "conversion_failed",
+        "app_version": "1.2.0",
+        "surface": "gui",
+        "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "reason": "xml_parse",
     }

@@ -12,14 +12,18 @@ from pydantic import ValidationError
 from rpc_analytics.contract import (
     MAX_BODY_BYTES,
     ConversionCompletedEvent,
+    ConversionFailedEvent,
     IngestEvent,
     InstallEvent,
     StatusResponse,
 )
 
-EVENT_MODELS: dict[str, type[ConversionCompletedEvent] | type[InstallEvent]] = {
+EVENT_MODELS: dict[
+    str, type[ConversionCompletedEvent] | type[InstallEvent] | type[ConversionFailedEvent]
+] = {
     "conversion_completed": ConversionCompletedEvent,
     "install": InstallEvent,
+    "conversion_failed": ConversionFailedEvent,
 }
 
 logger = logging.getLogger("rpc_analytics")

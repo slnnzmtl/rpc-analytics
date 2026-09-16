@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from fastapi import Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from rpc_analytics.contract import AggregateRow, ReportResponse
+from rpc_analytics.contract import AggregateRow, FailureAggregateRow, InstallAggregateRow, ReportResponse
 
 ALLOWED_FILTERS = (
     "app_version",
@@ -18,6 +18,7 @@ ALLOWED_FILTERS = (
     "sample_rate",
 )
 ALLOWED_GROUP_BY = ("date",) + ALLOWED_FILTERS
+ALLOWED_INSTALL_FILTERS = ("app_version", "surface")
 
 
 def _utc_today() -> date:
@@ -53,6 +54,11 @@ def build_report(
 
     try:
         rows = state.store.query(start, end, filters=filters, group_by=group_fields)
+        install_filters = {
+            key: value for key, value in filters.items() if key in ALLOWED_INSTALL_FILTERS
+        }
+        install_rows = state.store.query_installs(start, end, filters=install_filters)
+        failure_rows = state.store.query_failures(start, end, filters=install_filters)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -64,6 +70,8 @@ def build_report(
         to_date=end,
         unique_installs=state.store.count_unique_installs(start, end),
         rows=[AggregateRow.model_validate(row) for row in rows],
+        install_rows=[InstallAggregateRow.model_validate(row) for row in install_rows],
+        failure_rows=[FailureAggregateRow.model_validate(row) for row in failure_rows],
     )
     return JSONResponse(report.model_dump(by_alias=True))
 

@@ -13,9 +13,11 @@ from rpc_analytics.contract import (
     MAX_BODY_BYTES,
     REPORTING_SCHEMA_VERSION,
     ConversionCompletedEvent,
+    ConversionFailedEvent,
     InstallEvent,
     ReportResponse,
     valid_example_payload,
+    valid_failure_payload,
     valid_install_payload,
 )
 
@@ -64,7 +66,7 @@ def test_unsupported_schema_version() -> None:
 
 def test_unsupported_event_name() -> None:
     payload = valid_example_payload()
-    payload["event"] = "conversion_failed"
+    payload["event"] = "session_started"
     with pytest.raises(ValidationError):
         ConversionCompletedEvent.model_validate(payload)
 
@@ -119,6 +121,59 @@ def test_report_response_shape() -> None:
     assert dumped["reporting_schema_version"] == 1
     assert dumped["project_id"] == "rekordbox-playlist-converter"
     assert dumped["unique_installs"] == 0
+    assert dumped["install_rows"] == []
+    assert dumped["failure_rows"] == []
+
+
+def test_report_includes_install_rows() -> None:
+    report = ReportResponse.model_validate(
+        {
+            "reporting_schema_version": REPORTING_SCHEMA_VERSION,
+            "project_id": "rekordbox-playlist-converter",
+            "project_name": "Rekordbox Playlist Converter",
+            "from": "2026-09-01",
+            "to": "2026-09-14",
+            "unique_installs": 2,
+            "rows": [],
+            "install_rows": [
+                {
+                    "date": "2026-09-14",
+                    "app_version": "1.2.0",
+                    "surface": "gui",
+                    "event_count": 2,
+                }
+            ],
+        }
+    )
+    dumped = report.model_dump(by_alias=True)
+    assert dumped["install_rows"][0]["event_count"] == 2
+    assert dumped["unique_installs"] == 2
+
+
+def test_report_includes_failure_rows() -> None:
+    report = ReportResponse.model_validate(
+        {
+            "reporting_schema_version": REPORTING_SCHEMA_VERSION,
+            "project_id": "rekordbox-playlist-converter",
+            "project_name": "Rekordbox Playlist Converter",
+            "from": "2026-09-01",
+            "to": "2026-09-14",
+            "unique_installs": 1,
+            "rows": [],
+            "failure_rows": [
+                {
+                    "date": "2026-09-14",
+                    "app_version": "1.2.0",
+                    "surface": "gui",
+                    "reason": "xml_parse",
+                    "event_count": 3,
+                }
+            ],
+        }
+    )
+    dumped = report.model_dump(by_alias=True)
+    assert dumped["failure_rows"][0]["reason"] == "xml_parse"
+    assert dumped["failure_rows"][0]["event_count"] == 3
 
 
 def test_reject_bad_install_id() -> None:
@@ -177,12 +232,43 @@ def test_install_normalizes_install_id() -> None:
     assert event.install_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 
+def test_valid_failure_parses() -> None:
+    event = ConversionFailedEvent.model_validate(valid_failure_payload())
+    assert event.schema_version == INGEST_SCHEMA_VERSION
+    assert event.event == "conversion_failed"
+    assert event.reason.value == "xml_parse"
+    assert event.install_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
+def test_failure_requires_install_id() -> None:
+    payload = valid_failure_payload()
+    del payload["install_id"]
+    with pytest.raises(ValidationError):
+        ConversionFailedEvent.model_validate(payload)
+
+
+def test_failure_rejects_unknown_reason() -> None:
+    payload = valid_failure_payload()
+    payload["reason"] = "disk_full"
+    with pytest.raises(ValidationError):
+        ConversionFailedEvent.model_validate(payload)
+
+
+def test_failure_rejects_extra_fields() -> None:
+    payload = valid_failure_payload()
+    payload["outcomes"] = {"converted": 0, "copied": 0, "skipped": 0, "appended": 0}
+    with pytest.raises(ValidationError):
+        ConversionFailedEvent.model_validate(payload)
+
+
 def test_contract_doc_exists() -> None:
     root = Path(__file__).resolve().parents[1]
     text = (root / "docs" / "contract.md").read_text(encoding="utf-8")
     assert "conversion_completed" in text
     assert '"event": "install"' in text
+    assert '"event": "conversion_failed"' in text
     assert "reporting_schema_version" in text
     assert "project_id" in text
     assert "install_id" in text
     assert "unique_installs" in text
+    assert "failure_rows" in text

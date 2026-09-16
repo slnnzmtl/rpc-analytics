@@ -31,10 +31,11 @@ curl -sS http://127.0.0.1:8091/health
 `POST /v1/events` — no authentication. Max body **4 KiB**. Unknown fields are rejected.
 Do **not** send `project_id`, client timestamps, track/file paths, or raw XML.
 
-`event` is either:
+`event` is one of:
 
 - `install` — one-shot on first analytics opt-in (required `install_id`; no conversion fields)
-- `conversion_completed` — only after a **successful** conversion (not dry-run, preview, cancel, or failure)
+- `conversion_completed` — only after a **successful** conversion (not dry-run, preview, or cancel)
+- `conversion_failed` — only after a **failed conversion job** (not dry-run, preview, or cancel); required `install_id` and closed `reason`
 
 ### Valid `install` example
 
@@ -47,6 +48,22 @@ curl -sS -X POST https://analytics.slnnzmtl.xyz/v1/events \
     "app_version": "1.2.0",
     "surface": "gui",
     "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  }'
+# {"status":"accepted"}   HTTP 202
+```
+
+### Valid `conversion_failed` example
+
+```bash
+curl -sS -X POST https://analytics.slnnzmtl.xyz/v1/events \
+  -H 'content-type: application/json' \
+  -d '{
+    "schema_version": 1,
+    "event": "conversion_failed",
+    "app_version": "1.2.0",
+    "surface": "gui",
+    "install_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "reason": "xml_parse"
   }'
 # {"status":"accepted"}   HTTP 202
 ```
@@ -89,10 +106,11 @@ curl -sS -X POST https://analytics.slnnzmtl.xyz/v1/events \
 | Field | Values |
 | --- | --- |
 | `schema_version` | `1` |
-| `event` | `install` \| `conversion_completed` |
+| `event` | `install` \| `conversion_completed` \| `conversion_failed` |
 | `app_version` | short dotted version (`1.2.0`) |
 | `surface` | `gui` \| `cli` |
-| `install_id` | UUID (`8-4-4-4-12` hex); required on `install`, optional on `conversion_completed` |
+| `install_id` | UUID (`8-4-4-4-12` hex); required on `install` and `conversion_failed`, optional on `conversion_completed` |
+| `reason` | `conversion_failed` only; `xml_parse` \| `encode` \| `config` \| `unknown` |
 | `rekordbox_version` | `conversion_completed` only; from XML `PRODUCT@Version` |
 | `output_format` | `conversion_completed` only; `wav` \| `aiff` |
 | `bit_depth` | `conversion_completed` only; `16` \| `24` (selected ceiling) |
@@ -110,7 +128,7 @@ curl -sS -X POST https://analytics.slnnzmtl.xyz/v1/events \
 | 422 | `{"status":"unsupported"}` | Wrong `schema_version` or `event` |
 | 429 | `{"status":"rate_limited"}` | Too many requests from this client |
 
-Failures on the client must be ignored; conversion must continue.
+Ingest HTTP failures on the client must be ignored; conversion must continue.
 
 Full contract examples: [contract.md](contract.md).
 
@@ -135,9 +153,13 @@ Sign in with the allowlisted Supabase email and password. The page stores the
 session in `sessionStorage` for that browser tab and calls `GET /v1/report` with
 the access token. After sign-in (or session restore), the default last-14-UTC-day
 range loads automatically and refreshes every minute. Charts cover daily
-outcomes, surface, format, app / Rekordbox mix, and ungrouped rows. The Users
-stat is `unique_installs` (distinct hashed `install_id` values from `install` and
-`conversion_completed` events in range).
+outcomes, install events (by surface), failed conversions (by reason), surface,
+format, source input file types (range totals and per UTC day), app / Rekordbox
+mix, and ungrouped rows (including `input_*` columns). The Users stat is
+`unique_installs` (distinct hashed `install_id` values from `install`,
+`conversion_completed`, and `conversion_failed` events in range). Install events
+are also shown as a dedicated daily chart from `install_rows`. Failed conversions
+use `failure_rows`.
 
 Localhost still works (`http://127.0.0.1:8091/dashboard`) if you prefer an SSH tunnel.
 
@@ -211,6 +233,13 @@ curl -sS -H "Authorization: Bearer $REPORT_TOKEN" \
       "copied": 3,
       "skipped": 1,
       "appended": 15,
+      "input_mp3": 4,
+      "input_wav": 2,
+      "input_aiff": 1,
+      "input_flac": 3,
+      "input_m4a": 1,
+      "input_alac": 0,
+      "input_other": 1,
       "event_count": 1
     }
   ]

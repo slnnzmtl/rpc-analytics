@@ -72,7 +72,54 @@ def test_report_authorized_shape(client: TestClient) -> None:
     assert len(body["rows"]) == 1
     assert body["rows"][0]["converted"] == 12
     assert body["rows"][0]["event_count"] == 1
+    assert body["rows"][0]["input_mp3"] == 4
+    assert body["rows"][0]["input_flac"] == 3
     assert body["unique_installs"] == 0
+    assert body["install_rows"] == []
+    assert body["failure_rows"] == []
+
+
+def test_report_install_rows(client: TestClient) -> None:
+    from rpc_analytics.contract import valid_install_payload
+
+    payload = valid_install_payload()
+    assert client.post("/v1/events", json=payload).status_code == 202
+    payload["install_id"] = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    payload["surface"] = "cli"
+    assert client.post("/v1/events", json=payload).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unique_installs"] == 2
+    assert body["rows"] == []
+    assert len(body["install_rows"]) == 2
+    by_surface = {row["surface"]: row["event_count"] for row in body["install_rows"]}
+    assert by_surface == {"gui": 1, "cli": 1}
+
+
+def test_report_failure_rows(client: TestClient) -> None:
+    from rpc_analytics.contract import valid_failure_payload
+
+    payload = valid_failure_payload()
+    assert client.post("/v1/events", json=payload).status_code == 202
+    payload["reason"] = "encode"
+    payload["install_id"] = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    assert client.post("/v1/events", json=payload).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unique_installs"] == 2
+    assert body["rows"] == []
+    by_reason = {row["reason"]: row["event_count"] for row in body["failure_rows"]}
+    assert by_reason == {"xml_parse": 1, "encode": 1}
 
 
 def test_report_filter_surface(client: TestClient) -> None:

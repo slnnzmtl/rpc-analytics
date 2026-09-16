@@ -13,6 +13,7 @@ from rpc_analytics.config import get_settings
 from rpc_analytics.contract import (
     MAX_BODY_BYTES,
     valid_example_payload,
+    valid_failure_payload,
     valid_install_payload,
 )
 from rpc_analytics.main import app
@@ -129,7 +130,7 @@ def test_store_has_no_raw_events_table(tmp_path: Path) -> None:
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-    assert tables == {"aggregates", "install_days"}
+    assert tables == {"aggregates", "install_days", "install_aggregates", "failure_aggregates"}
 
 
 def test_ingest_without_install_id_unique_zero(client: TestClient) -> None:
@@ -217,6 +218,14 @@ def test_ingest_install_accepted_counts_unique(client: TestClient) -> None:
     body = response.json()
     assert body["unique_installs"] == 1
     assert body["rows"] == []
+    assert body["install_rows"] == [
+        {
+            "date": today,
+            "app_version": "1.2.0",
+            "surface": "gui",
+            "event_count": 2,
+        }
+    ]
 
 
 def test_ingest_install_cli_surface(client: TestClient) -> None:
@@ -290,3 +299,62 @@ def test_ingest_install_and_conversion_same_id_count_once(client: TestClient) ->
     assert body["unique_installs"] == 1
     assert len(body["rows"]) == 1
     assert body["rows"][0]["event_count"] == 1
+
+
+def test_ingest_conversion_failed_accepted(client: TestClient) -> None:
+    payload = valid_failure_payload()
+    assert client.post("/v1/events", json=payload).status_code == 202
+    today = datetime.now(timezone.utc).date().isoformat()
+    response = client.get(
+        f"/v1/report?from={today}&to={today}",
+        headers={"Authorization": "Bearer test-report-token"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unique_installs"] == 1
+    assert body["rows"] == []
+    assert body["install_rows"] == []
+    assert body["failure_rows"] == [
+        {
+            "date": today,
+            "app_version": "1.2.0",
+            "surface": "gui",
+            "reason": "xml_parse",
+            "event_count": 1,
+        }
+    ]
+
+
+def test_ingest_conversion_failed_does_not_touch_conversion_aggregates(
+    client: TestClient,
+) -> None:
+    assert client.post("/v1/events", json=valid_failure_payload()).status_code == 202
+    store = AggregateStore(get_settings().sqlite_path)
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert store.query(today, today) == []
+    assert len(store.query_failures(today, today)) == 1
+
+
+def test_ingest_conversion_failed_bad_reason(client: TestClient) -> None:
+    payload = valid_failure_payload()
+    payload["reason"] = "disk_full"
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_conversion_failed_missing_install_id(client: TestClient) -> None:
+    payload = valid_failure_payload()
+    del payload["install_id"]
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}
+
+
+def test_ingest_conversion_failed_rejects_conversion_fields(client: TestClient) -> None:
+    payload = valid_failure_payload()
+    payload["rekordbox_version"] = "7.0.5"
+    payload["outcomes"] = {"converted": 1, "copied": 0, "skipped": 0, "appended": 1}
+    response = client.post("/v1/events", json=payload)
+    assert response.status_code == 400
+    assert response.json() == {"status": "invalid"}

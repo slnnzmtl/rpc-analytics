@@ -55,6 +55,24 @@ def test_dashboard_returns_login_html(client: TestClient) -> None:
     assert "Choose a date range, then Load." not in body
     assert "Sign in to load the last 14 UTC days." in body
     assert "Users" in body
+    assert "Install events" in body
+    assert "installChart" in body
+    assert "Failed conversions" in body
+    assert "failureChart" in body
+    assert "seriesStackedBarChart" in body
+    assert "seriesChartRows" in body
+    assert "aggregateFailuresByDate" in body
+    assert "stackedBarChart" not in body
+    assert "inputDailyBarChart" not in body
+    assert "FAILURE_REASONS" in body
+    assert "aggregateInstallsByDate" in body
+    assert "inputTypeChart" in body
+    assert "inputDailyChart" in body
+    assert "INPUT_FILE_BUCKETS" in body
+    assert "sumInputBuckets" in body
+    assert "inputTypesByDate" in body
+    assert "Source files by input type" in body
+    assert "Source input files per UTC day" in body
 
 
 def test_favicon_svg(client: TestClient) -> None:
